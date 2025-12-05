@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from serpapi import GoogleSearch
 from datetime import datetime
-from google import genai  # Gemini client
+
 
 # -------------------------------------------------
 # API KEYS
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # -------------------------------------------------
 # GEMINI CLIENT
 # -------------------------------------------------
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+#gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # -------------------------------------------------
 # Pydantic Models
