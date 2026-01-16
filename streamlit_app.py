@@ -85,7 +85,6 @@ def google_flights_search_url(origin: str, destination: str, out_date: str, ret_
     return "https://www.google.com/travel/flights?q=" + quote_plus(q)
 
 def google_hotels_search_url(location: str, check_in: str, check_out: str) -> str:
-    # Reliable fallback
     q = f"Hotels in {location} from {check_in} to {check_out}"
     return "https://www.google.com/travel/hotels?q=" + quote_plus(q)
 
@@ -146,7 +145,6 @@ def fmt_flights(best_flights: List[Dict], origin: str, destination: str, out_dat
         arr = leg0.get("arrival_airport", {}) or {}
 
         stops = "Nonstop" if len(legs) == 1 else f"{len(legs)-1} stop(s)"
-
         link = f.get("link") or f.get("booking_link") or f.get("booking_url") or fallback_link
 
         out.append({
@@ -163,19 +161,35 @@ def fmt_flights(best_flights: List[Dict], origin: str, destination: str, out_dat
     return out
 
 def _pick_hotel_area(raw: Dict) -> str:
-    # SerpAPI varies; try a few common fields
-    for k in ["neighborhood", "area", "address", "location"]:
-        v = raw.get(k)
+    """
+    Return a human-friendly area/address only.
+    Never return GPS coordinates (looks ugly in UI).
+    """
+    candidates = [
+        raw.get("neighborhood"),
+        raw.get("area"),
+        raw.get("address"),
+        raw.get("location"),
+        raw.get("formatted_address"),
+        raw.get("city"),
+    ]
+
+    for v in candidates:
+        v = clean_text(v)
         if v:
-            return clean_text(v)
-    # Sometimes under nested structures
-    geo = raw.get("gps_coordinates") or {}
-    if geo.get("latitude") and geo.get("longitude"):
-        return f"{geo['latitude']}, {geo['longitude']}"
+            return v
+
+    # Sometimes nested
+    addr = raw.get("address_info") or raw.get("address_details") or {}
+    if isinstance(addr, dict):
+        for k in ["neighborhood", "area", "address", "formatted_address", "city", "region", "country"]:
+            v = clean_text(addr.get(k))
+            if v:
+                return v
+
     return ""
 
 def _pick_hotel_amenities(raw: Dict) -> str:
-    # Common fields: amenities / top_features / features
     am = raw.get("amenities") or raw.get("top_features") or raw.get("features") or []
     if isinstance(am, list):
         am = [clean_text(x) for x in am if clean_text(x)]
@@ -189,18 +203,18 @@ def fmt_hotels(props: List[Dict], location_query: str, check_in: str, check_out:
 
     for h in props[:18]:
         rate = (h.get("rate_per_night", {}) or {}).get("lowest", h.get("price", "N/A"))
-        link = h.get("link") or h.get("hotel_class") or ""  # hotel_class is NOT a link; keep as fallback only if real link missing
         link = h.get("link") or fallback_link
-
-        # property type sometimes exists as "type" or "property_type"
         prop_type = clean_text(h.get("property_type") or h.get("type") or "")
+        area = _pick_hotel_area(h)
+        if not area:
+            area = f"Near {location_query}"
 
         out.append({
             "name": clean_text(h.get("name", "Unknown")),
             "price": clean_text(rate),
             "rating": float(h.get("overall_rating", 0.0) or 0.0),
             "reviews_count": clean_text(h.get("reviews") or h.get("reviews_count") or ""),
-            "area": _pick_hotel_area(h),
+            "area": area,
             "type": prop_type,
             "amenities": _pick_hotel_amenities(h),
             "distance": clean_text(h.get("distance_to_center") or h.get("distance") or ""),
@@ -249,7 +263,7 @@ def clamp_multiselect(selection: List[str], limit: int) -> Tuple[List[str], bool
     return selection[:limit], True
 
 # -------------------------
-# UI (Premium dark, native components)
+# UI
 # -------------------------
 st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
 
@@ -263,14 +277,11 @@ st.markdown(
   --line:rgba(255,255,255,0.08);
   --radius:18px;
 }
-
 html, body, [class*="css"] { background: var(--bg) !important; }
 .block-container { padding-top: 2.2rem; padding-bottom: 2rem; max-width: 1180px; }
 h1, h2, h3, h4, h5, h6, p, li, span, label { color: var(--text) !important; }
-
 [data-testid="stSidebar"] { background: linear-gradient(180deg, rgba(16,26,45,1), rgba(11,15,23,1)) !important; border-right: 1px solid var(--line); }
 [data-testid="stSidebar"] * { color: var(--text) !important; }
-
 div[data-testid="stTextInput"] input,
 div[data-testid="stSelectbox"] div,
 div[data-testid="stMultiSelect"] div {
@@ -279,7 +290,6 @@ div[data-testid="stMultiSelect"] div {
   border-radius: 12px !important;
   color: var(--text) !important;
 }
-
 .stButton>button {
   background: linear-gradient(90deg, #7cf5c5, #6aa6ff);
   color: #071018 !important;
@@ -288,15 +298,12 @@ div[data-testid="stMultiSelect"] div {
   padding: 0.7rem 1rem !important;
   font-weight: 800 !important;
 }
-
 [data-testid="stVerticalBlockBorderWrapper"]{
   border-color: var(--line) !important;
   border-radius: var(--radius) !important;
   background: rgba(255,255,255,0.02) !important;
 }
-
 .small-note { color: var(--muted) !important; font-size: 0.92rem; }
-.meta { color: var(--muted) !important; font-size: 0.88rem; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -434,7 +441,9 @@ if flights or hotels_fmt:
                     r3.caption("Duration")
                     r3.write(dur_str)
 
-                    st.markdown(f"[Open in Google Flights]({f.get('link') or google_flights_search_url(origin, destination, st.session_state.get('outbound_date',''), st.session_state.get('return_date',''))})")
+                    st.markdown(
+                        f"[Open in Google Flights]({f.get('link') or google_flights_search_url(origin, destination, st.session_state.get('outbound_date',''), st.session_state.get('return_date',''))})"
+                    )
 
     # ---- Hotels ----
     with tab2:
@@ -459,7 +468,6 @@ if flights or hotels_fmt:
                     top_l.markdown(f"**{i+1}. {h['name']}**")
                     top_r.caption(f"{h['price']} • ⭐ {h['rating']:.1f}")
 
-                    # Row 1: Area / Type / Distance
                     cA, cB, cC = st.columns(3)
                     cA.caption("Area / Address")
                     cA.write(h.get("area") or "—")
@@ -468,15 +476,15 @@ if flights or hotels_fmt:
                     cC.caption("Distance")
                     cC.write(h.get("distance") or "—")
 
-                    # Row 2: Amenities + Reviews
                     cD, cE = st.columns([2, 1])
                     cD.caption("Highlights")
                     cD.write(h.get("amenities") or "—")
                     cE.caption("Reviews")
                     cE.write(h.get("reviews_count") or "—")
 
-                    # Link always present (fallback to Google Hotels search)
-                    st.markdown(f"[Open hotel listing]({h.get('link') or google_hotels_search_url(st.session_state.get('location','') or destination, st.session_state.get('outbound_date',''), st.session_state.get('return_date',''))})")
+                    st.markdown(
+                        f"[Open hotel listing]({h.get('link') or google_hotels_search_url(st.session_state.get('location','') or destination, st.session_state.get('outbound_date',''), st.session_state.get('return_date',''))})"
+                    )
 
     # ---- AI Picks ----
     with tab3:
@@ -566,7 +574,6 @@ Hotels data:
     with tab4:
         st.subheader("Itinerary & Export")
 
-        origin2 = st.session_state.get("origin", origin)
         dest2 = st.session_state.get("destination", destination)
         out_d2 = st.session_state.get("outbound_date", outbound_date)
         ret_d2 = st.session_state.get("return_date", return_date)
