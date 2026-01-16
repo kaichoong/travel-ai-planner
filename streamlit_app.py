@@ -2,11 +2,10 @@
 import os
 import asyncio
 import random
-import html
-import textwrap
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
+from urllib.parse import quote_plus
 
 import streamlit as st
 from serpapi import GoogleSearch
@@ -18,29 +17,14 @@ from google import genai
 TAG_RE = re.compile(r"<[^>]*>")
 
 def clean_text(x: Any) -> str:
-    """
-    Hardened sanitizer to ensure API strings can never leak HTML fragments
-    like </div> into the UI (including fullwidth brackets, invisible chars, etc).
-    """
+    """Defensive cleanup so UI never shows HTML fragments."""
     if x is None:
         return ""
     s = str(x)
-
-    # Remove common invisible / odd chars
     s = s.replace("\u200b", "").replace("\ufeff", "").replace("\u2060", "")
-
-    # Normalize lookalike brackets (fullwidth)
     s = s.replace("＜", "<").replace("＞", ">")
-
-    # Strip HTML tags
     s = TAG_RE.sub("", s)
-
-    # HARD KILL any leftover angle brackets
     s = s.replace("<", "").replace(">", "")
-
-    # Extra hard kill for div fragments that can survive in odd cases
-    s = s.replace("/div", "").replace("div", "")
-
     return s.strip()
 
 def normalize_date(date_str: str) -> str:
@@ -59,8 +43,8 @@ def _extract_text(resp: Any) -> str:
 
 def run_async(coro):
     """
-    Reliable async runner in Streamlit ScriptRunner thread:
-    create a fresh loop each time (avoids 'no current event loop' errors).
+    Streamlit runs in ScriptRunner thread where 'get current loop' can fail.
+    Create a fresh event loop per call.
     """
     loop = asyncio.new_event_loop()
     try:
@@ -96,14 +80,15 @@ async def gemini_call(client, model: str, prompt: str, retries: int = 5) -> str:
             return f"⚠️ AI error: {e}"
     return "⚠️ AI is busy / quota-limited. Please try again shortly."
 
-async def get_flights(
-    serp_key: str,
-    origin: str,
-    destination: str,
-    out_date: str,
-    ret_date: str,
-    currency: str = "USD",
-) -> List[Dict]:
+def google_flights_search_url(origin: str, destination: str, out_date: str, ret_date: str) -> str:
+    # Works reliably as a Google Flights search query link
+    q = f"Flights from {origin} to {destination} on {out_date} returning {ret_date}"
+    return "https://www.google.com/travel/flights?q=" + quote_plus(q)
+
+# -------------------------
+# SerpAPI fetchers
+# -------------------------
+async def get_flights(serp_key: str, origin: str, destination: str, out_date: str, ret_date: str, currency: str) -> List[Dict]:
     params = {
         "engine": "google_flights",
         "api_key": serp_key,
@@ -120,14 +105,7 @@ async def get_flights(
         raise RuntimeError(results["error"])
     return results.get("best_flights", []) or []
 
-async def get_hotels(
-    serp_key: str,
-    location: str,
-    check_in: str,
-    check_out: str,
-    currency: str = "USD",
-    min_rating: float = 0.0,
-) -> List[Dict]:
+async def get_hotels(serp_key: str, location: str, check_in: str, check_out: str, currency: str, min_rating: float) -> List[Dict]:
     params = {
         "engine": "google_hotels",
         "api_key": serp_key,
@@ -147,8 +125,13 @@ async def get_hotels(
         props = [p for p in props if float(p.get("overall_rating", 0) or 0) >= float(min_rating)]
     return props
 
-def fmt_flights(best_flights: List[Dict]) -> List[Dict]:
+# -------------------------
+# Formatting
+# -------------------------
+def fmt_flights(best_flights: List[Dict], origin: str, destination: str, out_date: str, ret_date: str) -> List[Dict]:
     out = []
+    fallback_link = google_flights_search_url(origin, destination, out_date, ret_date)
+
     for f in best_flights[:12]:
         legs = f.get("flights") or []
         if not legs:
@@ -160,6 +143,9 @@ def fmt_flights(best_flights: List[Dict]) -> List[Dict]:
 
         stops = "Nonstop" if len(legs) == 1 else f"{len(legs)-1} stop(s)"
 
+        # Best-effort: sometimes SerpAPI includes a link-ish field; otherwise fallback
+        link = f.get("link") or f.get("booking_link") or f.get("booking_url") or fallback_link
+
         out.append({
             "airline": clean_text(leg0.get("airline", "Unknown")),
             "price": clean_text(f.get("price", "N/A")),
@@ -168,6 +154,7 @@ def fmt_flights(best_flights: List[Dict]) -> List[Dict]:
             "depart": clean_text(f"{dep.get('id','')} {dep.get('time','')}".strip()),
             "arrive": clean_text(f"{arr.get('id','')} {arr.get('time','')}".strip()),
             "class": clean_text(leg0.get("travel_class", "Economy")),
+            "link": clean_text(link),
             "raw": f,
         })
     return out
@@ -180,8 +167,8 @@ def fmt_hotels(props: List[Dict]) -> List[Dict]:
             "name": clean_text(h.get("name", "Unknown")),
             "price": clean_text(rate),
             "rating": float(h.get("overall_rating", 0.0) or 0.0),
-            "reviews": h.get("reviews", None),
             "location": clean_text(h.get("location", "")),
+            "reviews": clean_text(h.get("reviews", "")),
             "link": clean_text(h.get("link", "")),
             "raw": h,
         })
@@ -226,65 +213,24 @@ def clamp_multiselect(selection: List[str], limit: int) -> Tuple[List[str], bool
         return selection, False
     return selection[:limit], True
 
-def card_html(title: str, rows: List[Tuple[str, str]], badge: str = "", link: str = "") -> str:
-    """
-    1) Escape text to avoid injection
-    2) Dedent to avoid Streamlit Markdown code block rendering
-    """
-    title_e = html.escape(clean_text(title))
-    badge_e = html.escape(clean_text(badge)) if badge else ""
-    link_e = html.escape(clean_text(link)) if link else ""
-
-    rows_html = ""
-    for k, v in rows:
-        rows_html += (
-            f'<div class="row">'
-            f'<div class="k">{html.escape(clean_text(k))}</div>'
-            f'<div class="v">{html.escape(clean_text(v))}</div>'
-            f'</div>'
-        )
-
-    btn_html = ""
-    if link_e:
-        btn_html = f'<a class="btn" href="{link_e}" target="_blank" rel="noopener noreferrer">Open</a>'
-
-    badge_html = f'<span class="badge">{badge_e}</span>' if badge_e else ""
-
-    html_out = f"""
-<div class="card">
-  <div class="card-top">
-    <div class="card-title">{title_e}</div>
-    <div class="card-actions">
-      {badge_html}
-      {btn_html}
-    </div>
-  </div>
-  <div class="card-body">
-    {rows_html}
-  </div>
-</div>
-"""
-    return textwrap.dedent(html_out).strip()
-
 # -------------------------
-# UI (Premium Dark)
+# UI (Premium dark, native components)
 # -------------------------
 st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
 
-CSS = """
+st.markdown(
+    """
 <style>
 :root{
   --bg:#0b0f17;
-  --muted:#9aa7bd;
+  --panel:#0f1626;
   --text:#e9eef7;
-  --line:rgba(255,255,255,0.07);
-  --brand:#7cf5c5;
-  --brand2:#6aa6ff;
-  --shadow: 0 10px 28px rgba(0,0,0,0.35);
-  --radius: 18px;
+  --muted:#9aa7bd;
+  --line:rgba(255,255,255,0.08);
+  --radius:18px;
 }
 
-html, body, [class*="css"]  { background: var(--bg) !important; }
+html, body, [class*="css"] { background: var(--bg) !important; }
 .block-container { padding-top: 2.2rem; padding-bottom: 2rem; max-width: 1180px; }
 h1, h2, h3, h4, h5, h6, p, li, span, label { color: var(--text) !important; }
 
@@ -301,84 +247,28 @@ div[data-testid="stMultiSelect"] div {
 }
 
 .stButton>button {
-  background: linear-gradient(90deg, var(--brand), var(--brand2));
+  background: linear-gradient(90deg, #7cf5c5, #6aa6ff);
   color: #071018 !important;
   border: 0 !important;
   border-radius: 14px !important;
   padding: 0.7rem 1rem !important;
   font-weight: 800 !important;
-  box-shadow: var(--shadow);
 }
-.stButton>button:hover { filter: brightness(1.05); transform: translateY(-1px); }
 
-.hero {
-  background: radial-gradient(1000px 600px at 20% 0%, rgba(124,245,197,0.10), transparent 60%),
-              radial-gradient(900px 500px at 80% 20%, rgba(106,166,255,0.12), transparent 60%),
-              linear-gradient(180deg, rgba(16,26,45,0.75), rgba(11,15,23,0.2));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 18px 18px 12px 18px;
-  box-shadow: var(--shadow);
-  margin-bottom: 14px;
+[data-testid="stVerticalBlockBorderWrapper"]{
+  border-color: var(--line) !important;
+  border-radius: var(--radius) !important;
+  background: rgba(255,255,255,0.02) !important;
 }
-.hero-title { font-size: 1.8rem; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
-.hero-sub { color: var(--muted) !important; margin: 6px 0 0 0; }
 
-.card {
-  background: linear-gradient(180deg, rgba(16,26,45,0.92), rgba(16,26,45,0.75));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px 14px 10px 14px;
-  box-shadow: var(--shadow);
-  margin-bottom: 12px;
-}
-.card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-.card-title { font-weight: 850; font-size: 1.02rem; }
-.card-actions { display:flex; align-items:center; gap:10px; }
-.badge{
-  font-size: 0.78rem;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.04);
-  color: var(--text);
-  white-space: nowrap;
-}
-.btn{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  font-weight:850;
-  font-size:0.82rem;
-  padding: 7px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.05);
-  color: var(--text) !important;
-  text-decoration:none !important;
-}
-.btn:hover{ filter: brightness(1.06); }
-
-.card-body { margin-top: 10px; }
-.row { display:flex; justify-content:space-between; gap:12px; padding: 7px 0; border-top: 1px solid var(--line); }
-.row:first-child { border-top: 0; padding-top: 0; }
-.k { color: var(--muted); font-size: 0.85rem; min-width: 120px; }
-.v { color: var(--text); font-size: 0.90rem; text-align:right; }
-
-.small-note { color: var(--muted) !important; font-size: 0.9rem; }
+.small-note { color: var(--muted) !important; font-size: 0.92rem; }
 </style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
-
-st.markdown(
-    """
-<div class="hero">
-  <div class="hero-title">✈️ AI Travel Planner</div>
-  <div class="hero-sub">Search flights & hotels, pick what you like, then let Gemini craft your itinerary.</div>
-</div>
 """,
     unsafe_allow_html=True,
 )
+
+st.title("✈️ AI Travel Planner")
+st.caption("Search flights & hotels, select what you like, then let Gemini craft your itinerary.")
 
 # -------------------------
 # Secrets / Clients
@@ -394,7 +284,7 @@ if not GEMINI_API_KEY or not SERPAPI_API_KEY:
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # -------------------------
-# Sidebar
+# Sidebar: Trip Builder
 # -------------------------
 with st.sidebar:
     st.markdown("### Trip Builder")
@@ -405,31 +295,20 @@ with st.sidebar:
     hotel_sort = st.selectbox("Sort hotels", ["Top rated", "Cheapest"], index=0)
     currency = st.selectbox("Currency", ["USD", "SGD", "MYR", "JPY", "EUR", "GBP"], index=0)
     st.markdown("---")
-    st.markdown(
-        '<div class="small-note">Tip: Hit <b>Search</b>, then select up to 3 flights & 3 hotels for the AI.</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="small-note">Tip: Hit <b>Search</b>, then select up to 3 flights & 3 hotels for the AI.</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Inputs
 # -------------------------
-c1, c2, c3, c4 = st.columns([1, 1, 1, 1])
+c1, c2, c3, c4 = st.columns(4)
 origin = c1.text_input("Origin (IATA)", value=st.session_state.get("origin", "SIN")).strip().upper()
 destination = c2.text_input("Destination (IATA)", value=st.session_state.get("destination", "NRT")).strip().upper()
 outbound_date = c3.text_input("Outbound date (YYYY-MM-DD)", value=st.session_state.get("outbound_date", "2026-02-10")).strip()
 return_date = c4.text_input("Return date (YYYY-MM-DD)", value=st.session_state.get("return_date", "2026-02-15")).strip()
 
-location = st.text_input(
-    "Hotel location (optional — defaults to destination)",
-    value=st.session_state.get("location", ""),
-).strip()
+location = st.text_input("Hotel location (optional — defaults to destination)", value=st.session_state.get("location", "")).strip()
 
-btn_col1, btn_col2 = st.columns([1, 4])
-search_clicked = btn_col1.button("Search", type="primary")
-btn_col2.markdown(
-    '<div class="small-note">You can keep refining inputs and re-search. The app stays single-file and redeploys on push.</div>',
-    unsafe_allow_html=True,
-)
+search_clicked = st.button("Search", type="primary")
 
 # -------------------------
 # Search
@@ -438,6 +317,7 @@ if search_clicked:
     try:
         out_d = normalize_date(outbound_date)
         ret_d = normalize_date(return_date)
+
         if origin and destination and origin == destination:
             st.error("Origin and destination cannot be the same.")
             st.stop()
@@ -446,15 +326,15 @@ if search_clicked:
 
         async def fetch_all():
             flights_raw, hotels_raw = await asyncio.gather(
-                get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency=currency),
-                get_hotels(SERPAPI_API_KEY, hotel_loc, out_d, ret_d, currency=currency, min_rating=min_hotel_rating),
+                get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency),
+                get_hotels(SERPAPI_API_KEY, hotel_loc, out_d, ret_d, currency, min_hotel_rating),
             )
             return flights_raw, hotels_raw
 
         with st.spinner("Searching flights & hotels..."):
-            best_flights_raw, hotels_raw = run_async(fetch_all())
+            flights_raw, hotels_raw = run_async(fetch_all())
 
-        flights = sort_flights(fmt_flights(best_flights_raw), flight_sort)
+        flights = sort_flights(fmt_flights(flights_raw, origin, destination, out_d, ret_d), flight_sort)
         hotels_fmt = sort_hotels(fmt_hotels(hotels_raw), hotel_sort)
 
         st.session_state["origin"] = origin
@@ -466,7 +346,6 @@ if search_clicked:
         st.session_state["flights"] = flights
         st.session_state["hotels"] = hotels_fmt
 
-        # reset downstream
         st.session_state["selected_flights"] = []
         st.session_state["selected_hotels"] = []
         st.session_state["ai_flights_md"] = ""
@@ -478,7 +357,7 @@ if search_clicked:
         st.error(str(e))
 
 # -------------------------
-# Display
+# Results / Tabs
 # -------------------------
 flights = st.session_state.get("flights", [])
 hotels_fmt = st.session_state.get("hotels", [])
@@ -486,82 +365,78 @@ hotels_fmt = st.session_state.get("hotels", [])
 if flights or hotels_fmt:
     tab1, tab2, tab3, tab4 = st.tabs(["✈️ Flights", "🏨 Hotels", "✨ AI Picks", "🗺️ Itinerary & Export"])
 
+    # ---- Flights ----
     with tab1:
-        st.markdown("### Flight options")
+        st.subheader("Flight options")
+
         if not flights:
             st.info("No flight results found. Try different dates or route.")
         else:
-            flight_labels = []
+            labels = []
             for i, f in enumerate(flights):
-                price = clean_text(f.get("price", "N/A"))
-                label = f"{i+1}. {clean_text(f.get('airline','Unknown'))} • {price} • {clean_text(f.get('stops',''))} • {clean_text(f.get('depart',''))} → {clean_text(f.get('arrive',''))}"
-                flight_labels.append(label)
+                labels.append(f"{i+1}. {f['airline']} • {f['price']} • {f['stops']} • {f['depart']} → {f['arrive']}")
 
-            selected_flights = st.multiselect(
-                "Select up to 3 flights (used to personalize AI picks)",
-                options=flight_labels,
-                default=st.session_state.get("selected_flights", []),
-            )
-            selected_flights, clipped = clamp_multiselect(selected_flights, 3)
+            selected = st.multiselect("Select up to 3 flights (personalizes AI picks)", options=labels, default=st.session_state.get("selected_flights", []))
+            selected, clipped = clamp_multiselect(selected, 3)
             if clipped:
                 st.warning("You can select up to 3 flights. Keeping the first 3.")
-            st.session_state["selected_flights"] = selected_flights
+            st.session_state["selected_flights"] = selected
 
             for i, f in enumerate(flights[:10]):
-                badge = f"{clean_text(f.get('price','N/A'))} • {clean_text(f.get('stops',''))}".strip(" •")
-                dur = f.get("duration_min", None)
+                dur = f.get("duration_min")
                 dur_str = f"{dur} min" if isinstance(dur, (int, float)) else "N/A"
-                st.markdown(
-                    card_html(
-                        title=f"{i+1}. {clean_text(f.get('airline','Unknown'))} ({clean_text(f.get('class','Economy'))})",
-                        badge=badge,
-                        rows=[
-                            ("Depart", clean_text(f.get("depart", ""))),
-                            ("Arrive", clean_text(f.get("arrive", ""))),
-                            ("Duration", dur_str),
-                        ],
-                    ),
-                    unsafe_allow_html=True,
-                )
 
+                with st.container(border=True):
+                    top_l, top_r = st.columns([3, 1])
+                    top_l.markdown(f"**{i+1}. {f['airline']} ({f['class']})**")
+                    top_r.caption(f"{f['price']} • {f['stops']}")
+
+                    r1, r2, r3 = st.columns(3)
+                    r1.caption("Depart")
+                    r1.write(f["depart"])
+                    r2.caption("Arrive")
+                    r2.write(f["arrive"])
+                    r3.caption("Duration")
+                    r3.write(dur_str)
+
+                    # link (best-effort)
+                    st.markdown(f"[Open in Google Flights]({f.get('link') or google_flights_search_url(origin, destination, st.session_state.get('outbound_date',''), st.session_state.get('return_date',''))})")
+
+    # ---- Hotels ----
     with tab2:
-        st.markdown("### Hotel options")
+        st.subheader("Hotel options")
+
         if not hotels_fmt:
             st.info("No hotel results found (or filtered out by rating). Try lowering min rating or changing location.")
         else:
-            hotel_labels = []
+            labels = []
             for i, h in enumerate(hotels_fmt):
-                label = f"{i+1}. {clean_text(h.get('name','Unknown'))} • {clean_text(h.get('price','N/A'))} • ⭐ {h.get('rating',0):.1f}"
-                hotel_labels.append(label)
+                labels.append(f"{i+1}. {h['name']} • {h['price']} • ⭐ {h['rating']:.1f}")
 
-            selected_hotels = st.multiselect(
-                "Select up to 3 hotels (used to personalize AI picks)",
-                options=hotel_labels,
-                default=st.session_state.get("selected_hotels", []),
-            )
-            selected_hotels, clipped = clamp_multiselect(selected_hotels, 3)
+            selected = st.multiselect("Select up to 3 hotels (personalizes AI picks)", options=labels, default=st.session_state.get("selected_hotels", []))
+            selected, clipped = clamp_multiselect(selected, 3)
             if clipped:
                 st.warning("You can select up to 3 hotels. Keeping the first 3.")
-            st.session_state["selected_hotels"] = selected_hotels
+            st.session_state["selected_hotels"] = selected
 
             for i, h in enumerate(hotels_fmt[:12]):
-                badge = f"{clean_text(h.get('price','N/A'))} • ⭐ {h.get('rating',0):.1f}".strip(" •")
-                link = clean_text(h.get("link", "")) or ""
-                st.markdown(
-                    card_html(
-                        title=f"{i+1}. {clean_text(h.get('name','Unknown'))}",
-                        badge=badge,
-                        link=link,
-                        rows=[
-                            ("Area", clean_text(h.get("location", "")) or "—"),
-                            ("Reviews", clean_text(h.get("reviews", "—"))),
-                        ],
-                    ),
-                    unsafe_allow_html=True,
-                )
+                with st.container(border=True):
+                    top_l, top_r = st.columns([3, 1])
+                    top_l.markdown(f"**{i+1}. {h['name']}**")
+                    top_r.caption(f"{h['price']} • ⭐ {h['rating']:.1f}")
 
+                    r1, r2 = st.columns(2)
+                    r1.caption("Area")
+                    r1.write(h.get("location", "—") or "—")
+                    r2.caption("Reviews")
+                    r2.write(h.get("reviews", "—") or "—")
+
+                    if h.get("link"):
+                        st.markdown(f"[Open hotel listing]({h['link']})")
+
+    # ---- AI Picks ----
     with tab3:
-        st.markdown("### AI recommendations (Gemini)")
+        st.subheader("AI recommendations (Gemini)")
 
         origin2 = st.session_state.get("origin", origin)
         dest2 = st.session_state.get("destination", destination)
@@ -590,14 +465,7 @@ if flights or hotels_fmt:
                     pass
             hotels_for_ai = [hotels_fmt[i] for i in idxs if 0 <= i < len(hotels_fmt)] or hotels_for_ai
 
-        gen_col1, gen_col2 = st.columns([1, 3])
-        generate_ai = gen_col1.button("Generate AI Picks", type="primary")
-        gen_col2.markdown(
-            '<div class="small-note">Uses your selected items (or top results if none selected) + Trip Builder preferences.</div>',
-            unsafe_allow_html=True,
-        )
-
-        if generate_ai:
+        if st.button("Generate AI Picks", type="primary"):
             flight_prompt = f"""
 You are an expert travel assistant.
 
@@ -609,6 +477,7 @@ User preferences:
 Task:
 1) Pick the best 1-2 flights from the list.
 2) Explain clearly in Markdown with bullet points.
+3) Include the flight link if available.
 
 Route: {origin2} -> {dest2}
 Dates: {out_d2} to {ret_d2}
@@ -628,7 +497,7 @@ User preferences:
 Task:
 1) Pick the best 2-3 hotels from the list.
 2) Explain clearly in Markdown with bullet points.
-3) If a link exists, include it as plain text.
+3) Include links as plain text.
 
 Location query: {hotel_loc2}
 Dates: {out_d2} to {ret_d2}
@@ -642,24 +511,23 @@ Hotels data:
                 st.session_state["ai_hotels_md"] = run_async(gemini_call(client, GEMINI_MODEL, hotel_prompt))
 
         if st.session_state.get("ai_flights_md"):
-            st.markdown("#### ✈️ Flights")
+            st.markdown("### ✈️ Flights")
             st.markdown(st.session_state["ai_flights_md"])
 
         if st.session_state.get("ai_hotels_md"):
-            st.markdown("#### 🏨 Hotels")
+            st.markdown("### 🏨 Hotels")
             st.markdown(st.session_state["ai_hotels_md"])
 
+    # ---- Itinerary + Export ----
     with tab4:
-        st.markdown("### Itinerary & tips")
+        st.subheader("Itinerary & Export")
 
         origin2 = st.session_state.get("origin", origin)
         dest2 = st.session_state.get("destination", destination)
         out_d2 = st.session_state.get("outbound_date", outbound_date)
         ret_d2 = st.session_state.get("return_date", return_date)
 
-        generate_itin = st.button("Generate Itinerary & Tips", type="primary")
-
-        if generate_itin:
+        if st.button("Generate Itinerary & Tips", type="primary"):
             itinerary_prompt = f"""
 Create a practical day-by-day itinerary in Markdown for {dest2}
 from {out_d2} to {ret_d2}.
@@ -687,16 +555,14 @@ Give concise travel tips in Markdown for {dest2}:
                 st.session_state["tips_md"] = run_async(gemini_call(client, GEMINI_MODEL, tips_prompt))
 
         if st.session_state.get("itinerary_md"):
-            st.markdown("#### 🗓️ Itinerary")
+            st.markdown("### 🗓️ Itinerary")
             st.markdown(st.session_state["itinerary_md"])
 
         if st.session_state.get("tips_md"):
-            st.markdown("#### 💡 Tips")
+            st.markdown("### 💡 Tips")
             st.markdown(st.session_state["tips_md"])
 
         st.markdown("---")
-        st.markdown("### Export")
-
         export_md = f"""# AI Travel Planner Export
 
 **Route:** {st.session_state.get("origin","")} → {st.session_state.get("destination","")}
@@ -725,7 +591,6 @@ Give concise travel tips in Markdown for {dest2}:
 
 ## Tips
 {st.session_state.get("tips_md","(not generated)")}
-
 """
         st.download_button(
             "Download Markdown",
