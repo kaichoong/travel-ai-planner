@@ -15,18 +15,32 @@ from google import genai
 # -------------------------
 # Helpers
 # -------------------------
-TAG_RE = re.compile(r"<[^>]+>")
+TAG_RE = re.compile(r"<[^>]*>")
 
 def clean_text(x: Any) -> str:
     """
-    SerpAPI sometimes returns HTML-ish fragments in fields.
-    Strip tags defensively so the UI never shows </div>, <span>, etc.
+    Hardened sanitizer to ensure API strings can never leak HTML fragments
+    like </div> into the UI (including fullwidth brackets, invisible chars, etc).
     """
     if x is None:
         return ""
     s = str(x)
-    s = TAG_RE.sub("", s)     # remove <...> tags
-    s = s.replace("\u200b", "")  # zero-width char sometimes appears
+
+    # Remove common invisible / odd chars
+    s = s.replace("\u200b", "").replace("\ufeff", "").replace("\u2060", "")
+
+    # Normalize lookalike brackets (fullwidth)
+    s = s.replace("＜", "<").replace("＞", ">")
+
+    # Strip HTML tags
+    s = TAG_RE.sub("", s)
+
+    # HARD KILL any leftover angle brackets
+    s = s.replace("<", "").replace(">", "")
+
+    # Extra hard kill for div fragments that can survive in odd cases
+    s = s.replace("/div", "").replace("div", "")
+
     return s.strip()
 
 def normalize_date(date_str: str) -> str:
@@ -46,7 +60,7 @@ def _extract_text(resp: Any) -> str:
 def run_async(coro):
     """
     Reliable async runner in Streamlit ScriptRunner thread:
-    create a fresh loop each time.
+    create a fresh loop each time (avoids 'no current event loop' errors).
     """
     loop = asyncio.new_event_loop()
     try:
@@ -380,7 +394,7 @@ if not GEMINI_API_KEY or not SERPAPI_API_KEY:
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # -------------------------
-# Sidebar: Trip Builder
+# Sidebar
 # -------------------------
 with st.sidebar:
     st.markdown("### Trip Builder")
@@ -494,7 +508,7 @@ if flights or hotels_fmt:
             st.session_state["selected_flights"] = selected_flights
 
             for i, f in enumerate(flights[:10]):
-                badge = f"{clean_text(f.get('price','N/A'))} • {clean_text(f.get('stops',''))}"
+                badge = f"{clean_text(f.get('price','N/A'))} • {clean_text(f.get('stops',''))}".strip(" •")
                 dur = f.get("duration_min", None)
                 dur_str = f"{dur} min" if isinstance(dur, (int, float)) else "N/A"
                 st.markdown(
@@ -531,7 +545,7 @@ if flights or hotels_fmt:
             st.session_state["selected_hotels"] = selected_hotels
 
             for i, h in enumerate(hotels_fmt[:12]):
-                badge = f"{clean_text(h.get('price','N/A'))} • ⭐ {h.get('rating',0):.1f}"
+                badge = f"{clean_text(h.get('price','N/A'))} • ⭐ {h.get('rating',0):.1f}".strip(" •")
                 link = clean_text(h.get("link", "")) or ""
                 st.markdown(
                     card_html(
@@ -711,6 +725,7 @@ Give concise travel tips in Markdown for {dest2}:
 
 ## Tips
 {st.session_state.get("tips_md","(not generated)")}
+
 """
         st.download_button(
             "Download Markdown",
