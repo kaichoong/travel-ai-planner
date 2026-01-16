@@ -3,6 +3,7 @@ import os
 import asyncio
 import random
 import html
+import textwrap
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -29,8 +30,8 @@ def _extract_text(resp: Any) -> str:
 
 def run_async(coro):
     """
-    Streamlit runs user code in its own thread (ScriptRunner).
-    Creating a fresh event loop per "run" is the most reliable approach.
+    Streamlit runs scripts in a ScriptRunner thread where 'current loop'
+    assumptions can break. Creating a fresh event loop per run is reliable.
     """
     loop = asyncio.new_event_loop()
     try:
@@ -123,11 +124,11 @@ def fmt_flights(best_flights: List[Dict]) -> List[Dict]:
         legs = f.get("flights") or []
         if not legs:
             continue
+
         leg0 = legs[0]
         dep = leg0.get("departure_airport", {}) or {}
         arr = leg0.get("arrival_airport", {}) or {}
 
-        # try to estimate stops nicely
         stops = "Nonstop" if len(legs) == 1 else f"{len(legs)-1} stop(s)"
 
         out.append({
@@ -138,7 +139,7 @@ def fmt_flights(best_flights: List[Dict]) -> List[Dict]:
             "depart": f"{dep.get('id','')} {dep.get('time','')}".strip(),
             "arrive": f"{arr.get('id','')} {arr.get('time','')}".strip(),
             "class": leg0.get("travel_class", "Economy"),
-            "raw": f,  # keep original if needed later
+            "raw": f,
         })
     return out
 
@@ -158,7 +159,6 @@ def fmt_hotels(props: List[Dict]) -> List[Dict]:
     return out
 
 def _parse_price_to_number(price_val) -> float:
-    # SerpAPI sometimes returns numbers or strings; keep it best-effort.
     if price_val is None:
         return float("inf")
     if isinstance(price_val, (int, float)):
@@ -198,42 +198,46 @@ def clamp_multiselect(selection: List[str], limit: int) -> Tuple[List[str], bool
     return selection[:limit], True
 
 def card_html(title: str, rows: List[Tuple[str, str]], badge: str = "", link: str = "") -> str:
-    # Escape to prevent accidental HTML injection
+    """
+    IMPORTANT: avoid leading indentation in the returned HTML.
+    If HTML starts with 4 spaces, Streamlit treats it as a Markdown code block
+    and you will see raw <div> tags in the UI.
+    """
     title_e = html.escape(title)
     badge_e = html.escape(badge) if badge else ""
     link_e = html.escape(link) if link else ""
 
     rows_html = ""
     for k, v in rows:
-        rows_html += f"""
-          <div class="row">
-            <div class="k">{html.escape(k)}</div>
-            <div class="v">{html.escape(v)}</div>
-          </div>
-        """
+        rows_html += (
+            f'<div class="row">'
+            f'<div class="k">{html.escape(k)}</div>'
+            f'<div class="v">{html.escape(v)}</div>'
+            f'</div>'
+        )
 
     btn_html = ""
     if link_e:
-        btn_html = f"""
-          <a class="btn" href="{link_e}" target="_blank" rel="noopener noreferrer">Open</a>
-        """
+        btn_html = f'<a class="btn" href="{link_e}" target="_blank" rel="noopener noreferrer">Open</a>'
 
-    badge_html = f"""<span class="badge">{badge_e}</span>""" if badge_e else ""
+    badge_html = f'<span class="badge">{badge_e}</span>' if badge_e else ""
 
-    return f"""
-    <div class="card">
-      <div class="card-top">
-        <div class="card-title">{title_e}</div>
-        <div class="card-actions">
-          {badge_html}
-          {btn_html}
-        </div>
-      </div>
-      <div class="card-body">
-        {rows_html}
-      </div>
+    html_out = f"""
+<div class="card">
+  <div class="card-top">
+    <div class="card-title">{title_e}</div>
+    <div class="card-actions">
+      {badge_html}
+      {btn_html}
     </div>
-    """
+  </div>
+  <div class="card-body">
+    {rows_html}
+  </div>
+</div>
+"""
+    return textwrap.dedent(html_out).strip()
+
 
 # -------------------------
 # UI (Premium Dark)
@@ -278,7 +282,7 @@ div[data-testid="stDateInput"] input {
   border: 0 !important;
   border-radius: 14px !important;
   padding: 0.7rem 1rem !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
   box-shadow: var(--shadow);
 }
 .stButton>button:hover { filter: brightness(1.05); transform: translateY(-1px); }
@@ -307,7 +311,7 @@ hr { border-color: var(--line) !important; }
   margin-bottom: 12px;
 }
 .card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-.card-title { font-weight: 800; font-size: 1.02rem; }
+.card-title { font-weight: 850; font-size: 1.02rem; }
 .card-actions { display:flex; align-items:center; gap:10px; }
 .badge{
   font-size: 0.78rem;
@@ -322,7 +326,7 @@ hr { border-color: var(--line) !important; }
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  font-weight:800;
+  font-weight:850;
   font-size:0.82rem;
   padding: 7px 10px;
   border-radius: 12px;
@@ -379,7 +383,10 @@ with st.sidebar:
     hotel_sort = st.selectbox("Sort hotels", ["Top rated", "Cheapest"], index=0)
     currency = st.selectbox("Currency", ["USD", "SGD", "MYR", "JPY", "EUR", "GBP"], index=0)
     st.markdown("---")
-    st.markdown('<div class="small-note">Tip: Keep inputs simple (IATA codes + dates). Hit <b>Search</b>, then select up to 3 flights & 3 hotels for the AI.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="small-note">Tip: Keep inputs simple (IATA codes + dates). Hit <b>Search</b>, then select up to 3 flights & 3 hotels for the AI.</div>',
+        unsafe_allow_html=True,
+    )
 
 # -------------------------
 # Inputs (Main)
@@ -397,7 +404,10 @@ location = st.text_input(
 
 btn_col1, btn_col2 = st.columns([1, 4])
 search_clicked = btn_col1.button("Search", type="primary")
-btn_col2.markdown('<div class="small-note">You can keep refining inputs and re-search. The app stays single-file and redeploys on push.</div>', unsafe_allow_html=True)
+btn_col2.markdown(
+    '<div class="small-note">You can keep refining inputs and re-search. The app stays single-file and redeploys on push.</div>',
+    unsafe_allow_html=True,
+)
 
 # -------------------------
 # Search + Store results
@@ -474,7 +484,6 @@ if flights or hotels_fmt:
                 st.warning("You can select up to 3 flights. Keeping the first 3.")
             st.session_state["selected_flights"] = selected_flights
 
-            # Render cards
             for i, f in enumerate(flights[:10]):
                 badge = f"{f.get('price','N/A')} • {f.get('stops','')}"
                 dur = f.get("duration_min", None)
@@ -532,6 +541,7 @@ if flights or hotels_fmt:
     # ---- AI Picks tab ----
     with tab3:
         st.markdown("### AI recommendations (Gemini)")
+
         origin = st.session_state.get("origin", origin)
         destination = st.session_state.get("destination", destination)
         out_d = st.session_state.get("outbound_date", outbound_date)
@@ -541,7 +551,6 @@ if flights or hotels_fmt:
         flights_for_ai = flights[:6]
         hotels_for_ai = hotels_fmt[:6]
 
-        # If user selected, use those subsets
         if st.session_state.get("selected_flights"):
             idxs = []
             for s in st.session_state["selected_flights"]:
@@ -626,6 +635,7 @@ Hotels data (JSON-ish):
     # ---- Itinerary tab ----
     with tab4:
         st.markdown("### Itinerary & tips")
+
         origin = st.session_state.get("origin", origin)
         destination = st.session_state.get("destination", destination)
         out_d = st.session_state.get("outbound_date", outbound_date)
@@ -673,6 +683,7 @@ Give concise travel tips in Markdown for {destination}:
 
         st.markdown("---")
         st.markdown("### Export")
+
         export_md = f"""# AI Travel Planner Export
 
 **Route:** {st.session_state.get("origin","")} → {st.session_state.get("destination","")}
