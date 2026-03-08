@@ -1659,24 +1659,29 @@ div[data-testid="column"] > div { gap: 0 !important; }
 
 .hero-features {
   display: flex;
-  gap: 1.2rem;
-  flex-wrap: wrap;
-  margin-top: 0.2rem;
+  align-items: center;
+  gap: 0;
+  flex-wrap: nowrap;
+  margin-top: 0.75rem;
+  overflow: hidden;
 }
 .hero-feat {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  color: #a8896e !important;
+  gap: 0;
+  font-size: 0.76rem;
+  color: #7a5f48 !important;
   font-weight: 500;
+  white-space: nowrap;
 }
-.hero-feat-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
+.hero-feat::before {
+  content: '·';
+  margin: 0 0.55rem;
+  color: #4a3020 !important;
+  font-size: 1rem;
 }
+.hero-feat:first-child::before { display: none; }
+.hero-feat-dot { display: none; }
 
 /* ---------- export ---------- */
 .export-meta {
@@ -1702,7 +1707,7 @@ st.markdown("""
 <div class="hero">
   <div class="hero-inner">
     <div class="hero-badge">✦ AI-Powered Travel Agent</div>
-    <h1>Plan Smarter. Travel Better.</h1>
+    <h1>Travel AI Agent</h1>
     <p class="hero-sub">
       Your personal AI travel agent — finds real-time flights & hotels,
       then builds your complete day-by-day itinerary, packing list and local tips in one click.
