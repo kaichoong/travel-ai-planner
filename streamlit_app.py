@@ -878,9 +878,8 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
   background: var(--accent) !important;
 }
 /* ---------- buttons ---------- */
-/* Primary (type="primary") — salmon fill */
-.stButton > button[kind="primary"],
-.stButton > button[data-testid*="primary"] {
+/* Primary — data-testid="baseButton-primary" */
+button[data-testid="baseButton-primary"] {
   background: var(--accent) !important;
   color: #1a1008 !important;
   border: 0 !important;
@@ -891,13 +890,13 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
   letter-spacing: 0.01em !important;
   transition: opacity 0.18s, transform 0.12s !important;
 }
-.stButton > button[kind="primary"]:hover {
+button[data-testid="baseButton-primary"]:hover {
   opacity: 0.88 !important;
   transform: translateY(-1px) !important;
 }
 
-/* Secondary (type="secondary") — amber outline */
-.stButton > button[kind="secondary"] {
+/* Secondary — data-testid="baseButton-secondary" */
+button[data-testid="baseButton-secondary"] {
   background: transparent !important;
   color: var(--accent2) !important;
   border: 1.5px solid var(--accent2) !important;
@@ -908,13 +907,13 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
   letter-spacing: 0.01em !important;
   transition: background 0.18s, transform 0.12s !important;
 }
-.stButton > button[kind="secondary"]:hover {
+button[data-testid="baseButton-secondary"]:hover {
   background: rgba(255,179,71,0.12) !important;
   transform: translateY(-1px) !important;
 }
 
-/* Tertiary / default (no type set) — muted outline */
-.stButton > button[kind="tertiary"] {
+/* Tertiary (default, no type) — data-testid="baseButton-tertiary" */
+button[data-testid="baseButton-tertiary"] {
   background: transparent !important;
   color: var(--muted) !important;
   border: 1.5px solid var(--border2) !important;
@@ -924,19 +923,20 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
   font-size: 0.9rem !important;
   transition: border-color 0.18s, color 0.18s, transform 0.12s !important;
 }
-.stButton > button[kind="tertiary"]:hover {
+button[data-testid="baseButton-tertiary"]:hover {
   border-color: var(--accent) !important;
   color: var(--text) !important;
   transform: translateY(-1px) !important;
 }
 
-/* Fallback for any button not matched above */
+/* Shared base for all stButton buttons */
 .stButton > button {
   border-radius: var(--radius-sm) !important;
   font-weight: 600 !important;
   font-size: 0.9rem !important;
   letter-spacing: 0.01em !important;
   transition: opacity 0.18s, transform 0.12s !important;
+  width: 100% !important;
 }
 .stDownloadButton > button {
   background: transparent !important;
