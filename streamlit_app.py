@@ -1732,63 +1732,54 @@ if flights or hotels_fmt:
                 logo_url = f.get("airline_logo", "")
                 dur_str  = fmt_duration(f.get("duration_min"))
                 nonstop  = "nonstop" in f.get("stops", "").lower()
+                dep_code = f.get("depart_code", "—")
+                dep_time = f.get("depart_time", "")
+                arr_code = f.get("arrive_code", "—")
+                arr_time = f.get("arrive_time", "")
+                link = f.get("link") or google_flights_search_url(
+                    st.session_state.get("origin", origin),
+                    st.session_state.get("destination", destination),
+                    st.session_state.get("outbound_date", ""),
+                    st.session_state.get("return_date", ""),
+                )
+                logo_html = f'<img class="airline-logo" src="{logo_url}">' if logo_url else "✈"
+                stop_pill = '<span class="pill pill-green">Nonstop</span>' if nonstop else f'<span class="pill pill-warn">{f["stops"]}</span>'
+                class_pill = f'<span class="pill pill-blue">{f["class"]}</span>'
 
-                with st.container(border=True):
-                    # Row 1: logo + airline + class pill | price
-                    col_info, col_price = st.columns([4, 1])
-                    with col_info:
-                        if logo_url:
-                            st.markdown(
-                                f'<img src="{logo_url}" style="height:22px;vertical-align:middle;margin-right:8px;filter:brightness(1.1);">'
-                                f'<strong>{f["airline"]}</strong>'
-                                f'<span class="pill pill-blue" style="margin-left:8px;">{f["class"]}</span>'
-                                + (f'<span class="pill pill-green">Nonstop</span>' if nonstop else f'<span class="pill pill-warn">{f["stops"]}</span>'),
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.markdown(
-                                f'<strong>{f["airline"]}</strong>'
-                                f'<span class="pill pill-blue" style="margin-left:8px;">{f["class"]}</span>'
-                                + (f'<span class="pill pill-green">Nonstop</span>' if nonstop else f'<span class="pill pill-warn">{f["stops"]}</span>'),
-                                unsafe_allow_html=True,
-                            )
-                    with col_price:
-                        st.markdown(f'<div class="price-tag" style="text-align:right;">{f["price"]}</div>', unsafe_allow_html=True)
-
-                    st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
-
-                    # Row 2: route visual
-                    dep_code = f.get("depart_code", "—")
-                    dep_time = f.get("depart_time", "")
-                    arr_code = f.get("arrive_code", "—")
-                    arr_time = f.get("arrive_time", "")
-
-                    st.markdown(f"""
-                    <div class="route-line">
+                st.markdown(f"""
+                <div class="flight-card">
+                  <div class="flight-header">
+                    <div class="flight-airline">
+                      {logo_html}
                       <div>
-                        <div class="iata">{dep_code}</div>
-                        <div class="time-small">{dep_time}</div>
-                      </div>
-                      <div class="dot-line"></div>
-                      <div style="text-align:center;">
-                        <div class="time-small">⏱ {dur_str}</div>
-                      </div>
-                      <div class="dot-line"></div>
-                      <div style="text-align:right;">
-                        <div class="iata">{arr_code}</div>
-                        <div class="time-small">{arr_time}</div>
+                        <div class="airline-name">{f['airline']}</div>
+                        <div class="pill-row" style="margin-top:4px;">{class_pill}{stop_pill}</div>
                       </div>
                     </div>
-                    """, unsafe_allow_html=True)
-
-                    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-                    link = f.get("link") or google_flights_search_url(
-                        st.session_state.get("origin", origin),
-                        st.session_state.get("destination", destination),
-                        st.session_state.get("outbound_date", ""),
-                        st.session_state.get("return_date", ""),
-                    )
-                    st.markdown(f'<a class="link-btn" href="{link}" target="_blank">Open in Google Flights →</a>', unsafe_allow_html=True)
+                    <div class="flight-price-block">
+                      <div class="flight-price">{f['price']}</div>
+                      <div class="flight-price-sub">per person · one way</div>
+                    </div>
+                  </div>
+                  <div class="route-line">
+                    <div>
+                      <div class="iata">{dep_code}</div>
+                      <div class="time-small">{dep_time}</div>
+                    </div>
+                    <div class="route-mid">
+                      <div class="route-dur">⏱ {dur_str}</div>
+                      <div class="dot-line"></div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div class="iata">{arr_code}</div>
+                      <div class="time-small">{arr_time}</div>
+                    </div>
+                  </div>
+                  <div class="flight-footer">
+                    <a class="link-btn" href="{link}" target="_blank">Open in Google Flights →</a>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
 
     # ==============================
     # TAB 2 — Hotels
@@ -1816,68 +1807,53 @@ if flights or hotels_fmt:
 
             st.markdown("")
             for i, h in enumerate(hotels_fmt[:12]):
-                with st.container(border=True):
-                    top_l, top_r = st.columns([3, 1])
-                    with top_l:
-                        prop_type = f' <span class="pill">{h["type"]}</span>' if h.get("type") else ""
-                        st.markdown(f'<span class="hotel-name">{i+1}. {h["name"]}</span>{prop_type}', unsafe_allow_html=True)
-                    with top_r:
-                        st.markdown(f'<div class="price-tag" style="text-align:right;">{h["price"]}</div>', unsafe_allow_html=True)
+                hc = h.get("hotel_class")
+                rs = h.get("review_score", h.get("rating", 0.0))
+                reviews_txt = f"· {h['reviews_count']} reviews" if h.get("reviews_count") else ""
+                prop_type = h.get("type", "")
+                link = h.get("link") or google_hotels_search_url(
+                    st.session_state.get("location", "") or destination,
+                    st.session_state.get("outbound_date", ""),
+                    st.session_state.get("return_date", ""),
+                )
+                if hc:
+                    class_block = f'<span class="hotel-class-stars">{"★" * hc}{"☆" * (5 - hc)}</span><span class="hotel-class-label">{hc}-star hotel</span>'
+                else:
+                    class_block = '<span class="hotel-class-label">Unclassified</span>'
 
-                    # ── Hotel class (luxury stars) ──────────────────
-                    hc = h.get("hotel_class")
-                    if hc:
-                        class_stars = "★" * hc + "☆" * (5 - hc)
-                        class_html = (
-                            f'<span style="color:#ffb347 !important;letter-spacing:0.05em;">{class_stars}</span>'
-                            f'<span style="font-size:0.72rem;color:#a8896e !important;margin-left:5px;">{hc}-star hotel</span>'
-                        )
-                    else:
-                        class_html = '<span style="font-size:0.72rem;color:#a8896e !important;">Unclassified</span>'
+                if rs > 0:
+                    score_cls = "green" if rs >= 8 else "amber" if rs >= 6 else "salmon"
+                    score_block = f'<span class="hotel-score-badge {score_cls}">{rs:.1f}/10 <span style="font-weight:400;font-size:0.65rem;">{reviews_txt}</span></span>'
+                else:
+                    score_block = '<span style="font-size:0.75rem;color:var(--muted);">No reviews</span>'
 
-                    # ── Guest review score ───────────────────────────
-                    rs = h.get("review_score", h.get("rating", 0.0))
-                    reviews_txt = f" · {h['reviews_count']} reviews" if h.get("reviews_count") else ""
-                    if rs > 0:
-                        score_pct = rs / 10.0  # 0-10 → 0-1
-                        score_color = "#38d96a" if score_pct >= 0.8 else "#ffb347" if score_pct >= 0.6 else "#fa7c4f"
-                        review_html = (
-                            f'<span style="font-size:0.82rem;font-weight:600;color:{score_color} !important;">'
-                            f'{rs:.1f}/10</span>'
-                            f'<span style="font-size:0.78rem;color:#a8896e !important;">{reviews_txt}</span>'
-                        )
-                    else:
-                        review_html = '<span style="font-size:0.78rem;color:#a8896e !important;">No reviews yet</span>'
+                type_pill = f'<span class="pill" style="margin-left:6px;">{prop_type}</span>' if prop_type else ""
+                dist_html = f'<span style="margin-left:auto;font-size:0.78rem;color:var(--muted);">📍 {h["distance"]}</span>' if h.get("distance") else ""
+                chips_html = ""
+                if h.get("amenities"):
+                    chips_html = '<div style="margin-top:0.6rem;">' + "".join(f'<span class="amenity-chip">{a}</span>' for a in h["amenities"]) + "</div>"
 
-                    st.markdown(
-                        f'{class_html}'
-                        f'<span style="color:#a8896e !important;margin:0 6px;">·</span>'
-                        f'{review_html}',
-                        unsafe_allow_html=True,
-                    )
-
-                    st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
-
-                    # Area + distance
-                    c_area, c_dist = st.columns([3, 1])
-                    with c_area:
-                        st.markdown(f'<div class="section-title">Location</div><div style="font-size:0.88rem;">{h["area"]}</div>', unsafe_allow_html=True)
-                    with c_dist:
-                        if h.get("distance"):
-                            st.markdown(f'<div class="section-title">Distance</div><div style="font-size:0.88rem;">{h["distance"]}</div>', unsafe_allow_html=True)
-
-                    # Amenities chips
-                    if h.get("amenities"):
-                        chips = "".join(f'<span class="amenity-chip">{a}</span>' for a in h["amenities"])
-                        st.markdown(f'<div class="section-title" style="margin-top:0.6rem;">Highlights</div>{chips}', unsafe_allow_html=True)
-
-                    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-                    link = h.get("link") or google_hotels_search_url(
-                        st.session_state.get("location", "") or destination,
-                        st.session_state.get("outbound_date", ""),
-                        st.session_state.get("return_date", ""),
-                    )
-                    st.markdown(f'<a class="link-btn" href="{link}" target="_blank">View hotel listing →</a>', unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="hotel-card">
+                  <div class="hotel-header">
+                    <div><div class="hotel-name">{i+1}. {h['name']}{type_pill}</div></div>
+                    <div class="hotel-price-block">
+                      <div class="hotel-price">{h['price']}</div>
+                      <div class="hotel-price-sub">per night</div>
+                    </div>
+                  </div>
+                  <div class="hotel-ratings">
+                    {class_block}
+                    <span style="color:rgba(255,200,150,0.2);">|</span>
+                    {score_block}
+                  </div>
+                  <div class="hotel-location">📍 {h['area']}{dist_html}</div>
+                  {chips_html}
+                  <div style="margin-top:0.75rem;">
+                    <a class="link-btn" href="{link}" target="_blank">View hotel listing →</a>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
 
     # ==============================
     # TAB 3 — AI Picks
@@ -1961,11 +1937,21 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
                 st.session_state["ai_hotels_md"]  = h_md
 
         if st.session_state.get("ai_flights_md"):
-            st.markdown("### ✈ Recommended Flights")
+            st.markdown('''
+            <div class="ai-result-header">
+              <div class="ai-result-icon flight">✈</div>
+              <div><div class="ai-result-title">Recommended Flights</div>
+              <div class="ai-result-sub">Gemini\'s top picks based on price, duration &amp; stops</div></div>
+            </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["ai_flights_md"])
 
         if st.session_state.get("ai_hotels_md"):
-            st.markdown("### 🏨 Recommended Hotels")
+            st.markdown('''
+            <div class="ai-result-header" style="margin-top:1.5rem;">
+              <div class="ai-result-icon hotel">🏨</div>
+              <div><div class="ai-result-title">Recommended Hotels</div>
+              <div class="ai-result-sub">Gemini\'s top picks based on rating, location &amp; value</div></div>
+            </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["ai_hotels_md"])
 
     # ==============================
@@ -2048,11 +2034,21 @@ Keep it realistic and not overly packed.""".strip()
                 st.session_state["tips_md"]       = t_md
 
         if st.session_state.get("itinerary_md"):
-            st.markdown("### 🗓 Itinerary")
+            st.markdown('''
+            <div class="ai-result-header">
+              <div class="ai-result-icon map">🗓</div>
+              <div><div class="ai-result-title">Day-by-Day Itinerary</div>
+              <div class="ai-result-sub">Your personalised travel plan</div></div>
+            </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["itinerary_md"])
 
         if st.session_state.get("tips_md"):
-            st.markdown("### 💡 Tips")
+            st.markdown('''
+            <div class="ai-result-header" style="margin-top:1.5rem;">
+              <div class="ai-result-icon flight">💡</div>
+              <div><div class="ai-result-title">Insider Tips</div>
+              <div class="ai-result-sub">Local knowledge &amp; practical advice</div></div>
+            </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["tips_md"])
 
         # ---------- Export ----------
