@@ -259,6 +259,40 @@ def fmt_duration(mins):
     h, m = divmod(int(mins), 60)
     return f"{h}h {m}m" if h else f"{m}m"
 
+def fmt_flights_for_ai(flights_list: list) -> str:
+    """Format flight dicts into clean structured text for Gemini."""
+    if not flights_list:
+        return "No flights available."
+    lines = []
+    for i, f in enumerate(flights_list, 1):
+        dur = fmt_duration(f.get("duration_min"))
+        lines.append(
+            f"Flight {i}: {f.get('airline','?')} | {f.get('class','Economy')} | "
+            f"{f.get('price','N/A')} | {f.get('stops','?')} | "
+            f"{f.get('depart_code','?')} {f.get('depart_time','')} → "
+            f"{f.get('arrive_code','?')} {f.get('arrive_time','')} | "
+            f"Duration: {dur}"
+        )
+        if f.get("link"):
+            lines.append(f"  Link: {f['link']}")
+    return "\n".join(lines)
+
+def fmt_hotels_for_ai(hotels_list: list) -> str:
+    """Format hotel dicts into clean structured text for Gemini."""
+    if not hotels_list:
+        return "No hotels available."
+    lines = []
+    for i, h in enumerate(hotels_list, 1):
+        amenities = ", ".join(h.get("amenities") or []) or "N/A"
+        lines.append(
+            f"Hotel {i}: {h.get('name','?')} | {h.get('type','')} | "
+            f"{h.get('price','N/A')}/night | Rating: {h.get('rating',0)/2:.1f}/5 | "
+            f"Area: {h.get('area','N/A')} | Highlights: {amenities}"
+        )
+        if h.get("link"):
+            lines.append(f"  Link: {h['link']}")
+    return "\n".join(lines)
+
 # -------------------------
 # Page config
 # -------------------------
@@ -652,13 +686,40 @@ with st.sidebar:
 # -------------------------
 # Route inputs
 # -------------------------
-c1, c2, c3, c4 = st.columns(4)
-origin      = c1.text_input("Origin", value=st.session_state.get("origin", "SIN"), placeholder="e.g. SIN").strip().upper()
-destination = c2.text_input("Destination", value=st.session_state.get("destination", "NRT"), placeholder="e.g. NRT").strip().upper()
-outbound_date = c3.text_input("Outbound", value=st.session_state.get("outbound_date", "2026-08-01"), placeholder="YYYY-MM-DD").strip()
-return_date   = c4.text_input("Return", value=st.session_state.get("return_date", "2026-08-08"), placeholder="YYYY-MM-DD").strip()
+from datetime import date, timedelta
 
-location = st.text_input("Hotel location (optional — defaults to destination)", value=st.session_state.get("location", ""), placeholder="e.g. Tokyo, Shinjuku").strip()
+_today      = date.today()
+_default_out = _today + timedelta(days=30)
+_default_ret = _today + timedelta(days=37)
+
+# Restore saved dates from session state
+_saved_out = st.session_state.get("outbound_date", "")
+_saved_ret = st.session_state.get("return_date", "")
+try:
+    _default_out = date.fromisoformat(_saved_out) if _saved_out else _default_out
+except Exception:
+    pass
+try:
+    _default_ret = date.fromisoformat(_saved_ret) if _saved_ret else _default_ret
+except Exception:
+    pass
+
+# Row 1: origin + destination (2 cols) | outbound + return dates (2 cols)
+r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
+origin      = r1c1.text_input("Origin (IATA)", value=st.session_state.get("origin", "SIN"), placeholder="e.g. SIN").strip().upper()
+destination = r1c2.text_input("Destination (IATA)", value=st.session_state.get("destination", "NRT"), placeholder="e.g. NRT").strip().upper()
+outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
+return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
+
+outbound_date = outbound_date_obj.strftime("%Y-%m-%d")
+return_date   = return_date_obj.strftime("%Y-%m-%d")
+
+# Row 2: hotel location
+location = st.text_input(
+    "Hotel location (optional — defaults to destination)",
+    value=st.session_state.get("location", ""),
+    placeholder="e.g. Tokyo, Shinjuku"
+).strip()
 
 search_clicked = st.button("Search Flights & Hotels", type="primary")
 
@@ -667,8 +728,12 @@ search_clicked = st.button("Search Flights & Hotels", type="primary")
 # -------------------------
 if search_clicked:
     try:
-        out_d = normalize_date(outbound_date)
-        ret_d = normalize_date(return_date)
+        out_d = outbound_date
+        ret_d = return_date
+
+        if return_date_obj <= outbound_date_obj:
+            st.error("Return date must be after outbound date.")
+            st.stop()
 
         if origin and destination and origin == destination:
             st.error("Origin and destination cannot be the same.")
@@ -695,7 +760,7 @@ if search_clicked:
             "flights": flights, "hotels": hotels_fmt,
             "selected_flights": [], "selected_hotels": [],
             "ai_flights_md": "", "ai_hotels_md": "",
-            "itinerary_md": "", "tips_md": "",
+            "itinerary_md": "", "tips_md": "", "insights_md": "",
         })
 
     except Exception as e:
@@ -708,7 +773,38 @@ flights    = st.session_state.get("flights", [])
 hotels_fmt = st.session_state.get("hotels", [])
 
 if flights or hotels_fmt:
-    tab1, tab2, tab3, tab4 = st.tabs(["✈  Flights", "🏨  Hotels", "✦  AI Picks", "🗺  Itinerary & Export"])
+    # --- Trip summary bar ---
+    _o  = st.session_state.get("origin", "")
+    _d  = st.session_state.get("destination", "")
+    _od = st.session_state.get("outbound_date", "")
+    _rd = st.session_state.get("return_date", "")
+    try:
+        _nights = (date.fromisoformat(_rd) - date.fromisoformat(_od)).days
+        _nights_str = f"{_nights} night{'s' if _nights != 1 else ''}"
+    except Exception:
+        _nights_str = ""
+    _nf = len(flights)
+    _nh = len(hotels_fmt)
+    st.markdown(f"""
+    <div style="
+      background: rgba(250,124,79,0.08);
+      border: 1px solid rgba(250,124,79,0.22);
+      border-radius: 12px;
+      padding: 0.7rem 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    ">
+      <span style="font-size:1.05rem;font-weight:600;color:#fa7c4f !important;letter-spacing:-0.01em;">{_o} → {_d}</span>
+      <span style="color:#a8896e !important;font-size:0.85rem;">📅 {_od} → {_rd} &nbsp;·&nbsp; {_nights_str}</span>
+      <span style="color:#a8896e !important;font-size:0.85rem;">✈ {_nf} flight{'s' if _nf != 1 else ''} found</span>
+      <span style="color:#a8896e !important;font-size:0.85rem;">🏨 {_nh} hotel{'s' if _nh != 1 else ''} found</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["✈  Flights", "🏨  Hotels", "✦  AI Picks", "🗺  Itinerary", "🌍  Destination"])
 
     # ==============================
     # TAB 1 — Flights
@@ -894,29 +990,36 @@ if flights or hotels_fmt:
             </div>""", unsafe_allow_html=True)
 
         if st.button("Generate AI Picks", type="primary"):
-            flight_prompt = f"""You are an expert travel assistant.
+            _flights_text = fmt_flights_for_ai(flights_for_ai)
+            _hotels_text  = fmt_hotels_for_ai(hotels_for_ai)
 
-User preferences: trip style = {style}, max stops = {max_stops}, currency = {currency}.
+            flight_prompt = f"""You are an expert travel assistant helping a traveller plan a trip.
 
-From the flights below, recommend the best 1-2 options.
-Explain in Markdown with bullet points. Include the flight link if available.
+Trip details:
+- Route: {origin2} → {dest2}
+- Dates: {out_d2} to {ret_d2}
+- Trip style: {style}
+- Max stops preferred: {max_stops}
+- Currency: {currency}
 
-Route: {origin2} → {dest2} | Dates: {out_d2} to {ret_d2}
+Available flights:
+{_flights_text}
 
-Flights:
-{flights_for_ai}""".strip()
+Task: Recommend the best 1-2 flights. For each pick explain WHY in 2-3 bullet points covering price, duration, stops and convenience. Include the booking link.""".strip()
 
-            hotel_prompt = f"""You are an expert travel assistant.
+            hotel_prompt = f"""You are an expert travel assistant helping a traveller plan a trip.
 
-User preferences: trip style = {style}, min hotel stars = {min_hotel_rating}★ (out of 5), currency = {currency}.
+Trip details:
+- Location: {hotel_loc2}
+- Dates: {out_d2} to {ret_d2}
+- Trip style: {style}
+- Min hotel quality: {min_hotel_rating}★ out of 5
+- Currency: {currency}
 
-From the hotels below, recommend the best 2-3 options.
-Explain in Markdown with bullet points. Include links as plain text.
+Available hotels:
+{_hotels_text}
 
-Location: {hotel_loc2} | Dates: {out_d2} to {ret_d2}
-
-Hotels:
-{hotels_for_ai}""".strip()
+Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet points covering price, rating, location and highlights. Include the listing link.""".strip()
 
             async def run_ai_picks():
                 f_md, h_md = await asyncio.gather(
@@ -1038,6 +1141,11 @@ Keep it realistic and not overly packed.""".strip()
 
 ## 💡 Travel Tips
 {st.session_state.get("tips_md", "_(not generated)_")}
+
+---
+
+## 🌍 Destination Insights
+{st.session_state.get("insights_md", "_(not generated)_")}
 """
         st.download_button(
             "⬇  Download as Markdown",
@@ -1045,6 +1153,51 @@ Keep it realistic and not overly packed.""".strip()
             file_name=f"travel_plan_{o}_{d}_{od}.md",
             mime="text/markdown",
         )
+
+    # ==============================
+    # TAB 5 — Destination Insights
+    # ==============================
+    with tab5:
+        dest2 = st.session_state.get("destination", "")
+
+        has_insights = st.session_state.get("insights_md")
+
+        if not has_insights:
+            st.markdown(f"""
+            <div class="empty-state">
+              <div class="empty-icon">🌍</div>
+              <div class="empty-title">Discover {dest2}</div>
+              <div class="empty-sub">Get AI-powered local insights — sentiment, highlights, tips and common pitfalls.</div>
+            </div>""", unsafe_allow_html=True)
+
+        if st.button("Generate Destination Insights", type="primary", key="btn_insights"):
+            insights_prompt = f"""You are a travel review analyst with deep knowledge of destinations worldwide.
+
+Summarise traveller experience for **{dest2}** in Markdown with these sections:
+
+### 🌟 Overall Vibe
+2-3 bullets: general atmosphere, pace, who it suits best.
+
+### ❤️ What Travellers Love
+5-6 bullets: food scene, landmarks, nature, nightlife, people, unique experiences.
+
+### 😬 Common Complaints
+4-5 bullets: crowds, costs, weather, safety issues, scams, transport pain points.
+
+### 🗓 Best Time to Visit
+2-3 bullets: peak vs off-peak, weather patterns, festival seasons.
+
+### 💡 Insider Tips
+5 practical tips: transport hacks, etiquette, money saving, safety reminders, hidden gems.
+
+Keep it honest, specific and genuinely useful. Avoid generic travel blog fluff.""".strip()
+
+            with st.spinner(f"Researching {dest2}..."):
+                insights_md = run_async(gemini_call(client, GEMINI_MODEL, insights_prompt))
+                st.session_state["insights_md"] = insights_md
+
+        if st.session_state.get("insights_md"):
+            st.markdown(st.session_state["insights_md"])
 
 else:
     # ---- Landing empty state ----
