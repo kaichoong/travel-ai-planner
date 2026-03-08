@@ -751,6 +751,89 @@ Rules:
         return []
 
 
+async def parse_nl_search(client, model, nl_text, today_str):
+    """Parse a natural language search query into structured travel fields."""
+    prompt = f"""Today is {today_str}. Parse this natural language travel search into structured JSON.
+
+Query: "{nl_text}"
+
+Return ONLY valid JSON, no markdown:
+{{
+  "origin_city": "Singapore",
+  "destination_city": "Bali",
+  "outbound_date": "2026-04-15",
+  "return_date": "2026-04-22",
+  "trip_style": "Beach",
+  "max_flight_budget": 500,
+  "max_hotel_budget": 0,
+  "confidence": "high"
+}}
+
+Rules:
+- origin_city: infer from context or use "Singapore" as default
+- destination_city: extract destination or best match for vibe described
+- outbound_date / return_date: YYYY-MM-DD format, infer from relative phrases ("next month", "in 2 weeks", etc.)
+- trip_style: one of Balanced / Foodie / Culture / Nature / Shopping / Luxury / Budget — pick best match
+- max_flight_budget / max_hotel_budget: 0 means no limit; extract numbers if mentioned
+- confidence: "high" if destination clear, "low" if vague
+- If trip duration not specified, default to 7 nights"""
+
+    try:
+        raw = await gemini_call(client, model, prompt)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        import json
+        return json.loads(raw.strip())
+    except Exception:
+        return {}
+
+
+async def get_price_insights(client, model, flights, origin_city, dest_city, out_d, ret_d, currency):
+    """Generate 2-3 punchy price insight callouts from flight data."""
+    if not flights:
+        return []
+
+    f_lines = []
+    for i, f in enumerate(flights[:10], 1):
+        dur = fmt_duration(f.get("duration_min"))
+        f_lines.append(f"F{i}: {f.get('airline','?')} | {f.get('price','?')} | {f.get('stops','?')} | {dur} | departs {f.get('depart_time','?')}")
+
+    prompt = f"""Analyse these flights from {origin_city} to {dest_city} ({out_d} to {ret_d}, {currency}) and generate 2-3 short price insight callouts.
+
+Flights:
+{chr(10).join(f_lines)}
+
+Return ONLY valid JSON array, no markdown:
+[
+  {{"icon": "💡", "insight": "Nonstop saves 2h vs cheapest option", "type": "tip"}},
+  {{"icon": "🔥", "insight": "Best deal: [Airline] at [price] — nonstop", "type": "deal"}},
+  {{"icon": "⚡", "insight": "Evening departures are 15% cheaper", "type": "saving"}}
+]
+
+Rules:
+- Max 2-3 insights, each under 10 words
+- type must be one of: tip / deal / saving / warning
+- Be specific — mention actual airlines, prices, times from the data
+- Only include insights that are genuinely useful
+- icon must be a single emoji"""
+
+    try:
+        raw = await gemini_call(client, model, prompt)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        import json
+        result = json.loads(raw.strip())
+        return result[:3] if isinstance(result, list) else []
+    except Exception:
+        return []
+
+
 st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
 
 # -------------------------
@@ -1393,6 +1476,76 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 .empty-title { font-size: 1rem; font-weight: 500; color: var(--muted) !important; margin-bottom: 0.3rem; }
 .empty-sub { font-size: 0.83rem; color: var(--muted) !important; }
 
+/* ---------- natural language search ---------- */
+.nl-search-wrap {
+  margin-bottom: 0.75rem;
+}
+.nl-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent) !important;
+  cursor: pointer;
+  background: rgba(250,124,79,0.08);
+  border: 1px solid rgba(250,124,79,0.22);
+  border-radius: 99px;
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 0.6rem;
+  transition: background 0.15s;
+}
+.nl-toggle:hover { background: rgba(250,124,79,0.14); }
+.nl-parse-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(250,124,79,0.06);
+  border: 1px solid rgba(250,124,79,0.18);
+  border-radius: 10px;
+  font-size: 0.78rem;
+}
+.nl-parse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(250,124,79,0.10);
+  border: 1px solid rgba(250,124,79,0.22);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  color: var(--text) !important;
+  font-size: 0.72rem;
+}
+.nl-parse-chip span { color: var(--muted) !important; font-size: 0.65rem; }
+
+/* ---------- price insights ---------- */
+.price-insights-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+.price-insight-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 10px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.3;
+  flex: 1;
+  min-width: 180px;
+}
+.price-insight-chip.tip     { background: rgba(100,210,255,0.08); border: 1px solid rgba(100,210,255,0.22); color: #64d2ff !important; }
+.price-insight-chip.deal    { background: rgba(56,217,106,0.08);  border: 1px solid rgba(56,217,106,0.22);  color: #38d96a !important; }
+.price-insight-chip.saving  { background: rgba(255,179,71,0.08);  border: 1px solid rgba(255,179,71,0.22);  color: #ffb347 !important; }
+.price-insight-chip.warning { background: rgba(250,124,79,0.08);  border: 1px solid rgba(250,124,79,0.22);  color: #fa7c4f !important; }
+
 /* ---------- search form wrapper ---------- */
 .search-form {
   background: rgba(35,21,8,0.6);
@@ -1653,6 +1806,78 @@ try:
 except Exception:
     pass
 
+# ── Natural language search toggle ──────────────────────────
+if "nl_mode" not in st.session_state:
+    st.session_state["nl_mode"] = False
+
+nl_col1, nl_col2 = st.columns([3, 1])
+with nl_col2:
+    if st.button("✦ Try AI search", key="nl_toggle", use_container_width=True):
+        st.session_state["nl_mode"] = not st.session_state["nl_mode"]
+
+if st.session_state.get("nl_mode"):
+    st.markdown("""
+    <div style="background:rgba(250,124,79,0.06);border:1px solid rgba(250,124,79,0.18);
+    border-radius:12px;padding:0.75rem 1rem 0.5rem;margin-bottom:0.75rem;">
+    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+    color:#fa7c4f;margin-bottom:0.4rem;">✦ Describe your trip in plain English</div>
+    """, unsafe_allow_html=True)
+
+    nl_col_in, nl_col_btn = st.columns([4, 1])
+    nl_input = nl_col_in.text_input(
+        "nl_input", label_visibility="collapsed",
+        placeholder='e.g. "Beach trip from Singapore under $600, leaving late April for a week"',
+        key="nl_text"
+    )
+    nl_parse_clicked = nl_col_btn.button("Parse →", type="primary", use_container_width=True, key="nl_parse")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if nl_parse_clicked and nl_input.strip():
+        with st.spinner("✦ Understanding your request..."):
+            _parsed = run_async(parse_nl_search(client, GEMINI_MODEL, nl_input.strip(), str(_today)))
+        if _parsed:
+            # Auto-fill session state fields
+            if _parsed.get("origin_city"):
+                st.session_state["origin_city"]      = _parsed["origin_city"]
+                st.session_state["origin_iata"]      = resolve_to_iata(_parsed["origin_city"])
+            if _parsed.get("destination_city"):
+                st.session_state["destination_city"] = _parsed["destination_city"]
+                st.session_state["destination_iata"] = resolve_to_iata(_parsed["destination_city"])
+            if _parsed.get("outbound_date"):
+                try:
+                    _new_out = date.fromisoformat(_parsed["outbound_date"])
+                    if _new_out >= _today:
+                        _default_out = _new_out
+                        st.session_state["outbound_date"] = _parsed["outbound_date"]
+                except Exception:
+                    pass
+            if _parsed.get("return_date"):
+                try:
+                    _new_ret = date.fromisoformat(_parsed["return_date"])
+                    _default_ret = _new_ret
+                    st.session_state["return_date"] = _parsed["return_date"]
+                except Exception:
+                    pass
+            if _parsed.get("max_flight_budget", 0) > 0:
+                st.session_state["_nl_flight_budget"] = _parsed["max_flight_budget"]
+            if _parsed.get("max_hotel_budget", 0) > 0:
+                st.session_state["_nl_hotel_budget"] = _parsed["max_hotel_budget"]
+            st.session_state["nl_parsed"] = _parsed
+            st.rerun()
+
+    # Show parsed result chips
+    if st.session_state.get("nl_parsed"):
+        _p = st.session_state["nl_parsed"]
+        chips = []
+        if _p.get("origin_city"):      chips.append(f'<div class="nl-parse-chip"><span>From</span> {_p["origin_city"]}</div>')
+        if _p.get("destination_city"): chips.append(f'<div class="nl-parse-chip"><span>To</span> {_p["destination_city"]}</div>')
+        if _p.get("outbound_date"):    chips.append(f'<div class="nl-parse-chip"><span>Out</span> {_p["outbound_date"]}</div>')
+        if _p.get("return_date"):      chips.append(f'<div class="nl-parse-chip"><span>Ret</span> {_p["return_date"]}</div>')
+        if _p.get("trip_style"):       chips.append(f'<div class="nl-parse-chip"><span>Style</span> {_p["trip_style"]}</div>')
+        if _p.get("max_flight_budget",0) > 0: chips.append(f'<div class="nl-parse-chip"><span>Flight ≤</span> {_p["max_flight_budget"]}</div>')
+        if chips:
+            st.markdown(f'<div class="nl-parse-result">{"".join(chips)}</div>', unsafe_allow_html=True)
+
 # ── Form wrapper ────────────────────────────────────────────
 st.markdown('<div class="search-form">', unsafe_allow_html=True)
 
@@ -1775,7 +2000,7 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
         "ai_flights_md": "", "ai_hotels_md": "",
         "itinerary_md": "", "tips_md": "", "insights_md": "",
         "packing_md": "", "visa_md": "", "weather": {},
-        "price_calendar": {}, "deal_scores": {}, "alt_suggestions": [],
+        "price_calendar": {}, "deal_scores": {}, "alt_suggestions": [], "price_insights": [],
     })
     return flights, hotels_fmt, hotel_loc
 
@@ -1858,18 +2083,23 @@ if search_clicked or plan_clicked:
                 flight_sort, hotel_sort,
             )
 
-        # ── AI deal scoring (runs after search, single Gemini call) ──
+        # ── AI deal scoring + alt suggestions + price insights (all concurrent) ──
         if flights or hotels_fmt:
             with st.spinner("✦ Analysing deals & finding alternatives..."):
-                _scores, _alts = run_async(asyncio.gather(
+                _oc2 = st.session_state.get("origin_city", origin)
+                _dc2 = st.session_state.get("destination_city", destination)
+                _scores, _alts, _insights = run_async(asyncio.gather(
                     get_deal_scores(client, GEMINI_MODEL, flights, hotels_fmt,
                                     origin, destination, out_d, ret_d, currency, style),
                     get_alt_suggestions(client, GEMINI_MODEL, origin, destination,
                                         out_d, ret_d, currency, style,
-                                        max_flight_budget, max_hotel_budget)
+                                        max_flight_budget, max_hotel_budget),
+                    get_price_insights(client, GEMINI_MODEL, flights,
+                                       _oc2, _dc2, out_d, ret_d, currency)
                 ))
                 st.session_state["deal_scores"]    = _scores
                 st.session_state["alt_suggestions"] = _alts
+                st.session_state["price_insights"]  = _insights
 
         if plan_clicked and (flights or hotels_fmt):
             # ── ONE-CLICK: run all AI in parallel ──────────────────
@@ -2181,6 +2411,17 @@ if flights or hotels_fmt:
             st.session_state["selected_flights"] = selected
 
             st.markdown("")
+            # ── Price insight callouts ──────────────────────
+            _insights = st.session_state.get("price_insights", [])
+            if _insights:
+                chips_html = "".join(
+                    f'<div class="price-insight-chip {ins.get("type","tip")}">'
+                    f'{ins.get("icon","💡")} {ins.get("insight","")}'
+                    f'</div>'
+                    for ins in _insights
+                )
+                st.markdown(f'<div class="price-insights-row">{chips_html}</div>', unsafe_allow_html=True)
+
             _f_scores = {s.get("id"): s for s in st.session_state.get("deal_scores", {}).get("flights", [])}
             for i, f in enumerate(flights[:10]):
                 logo_url = f.get("airline_logo", "")
