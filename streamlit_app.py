@@ -1723,67 +1723,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # -------------------------
 # Sidebar
 # -------------------------
-with st.sidebar:
-    st.markdown("""
-    <div class="sidebar-title">
-      <div class="sidebar-title-icon">⚙</div>
-      Preferences
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── TRIP STYLE ──────────────────────────────────────────
-    st.markdown("""
-    <div class="sb-group">
-      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Trip style</div>
-    </div>
-    """, unsafe_allow_html=True)
-    style = st.selectbox("Trip style", ["Balanced", "Foodie", "Culture", "Nature", "Shopping", "Luxury", "Budget"], index=0, label_visibility="collapsed")
-
-    # ── BUDGET ──────────────────────────────────────────────
-    st.markdown("""
-    <div class="sb-group">
-      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Budget</div>
-    </div>
-    """, unsafe_allow_html=True)
-    max_flight_budget = st.number_input("Max flight price", min_value=0, max_value=10000, value=0, step=50, help="0 = no limit")
-    max_hotel_budget  = st.number_input("Max hotel price/night", min_value=0, max_value=2000, value=0, step=10, help="0 = no limit")
-
-    # ── FILTERS ─────────────────────────────────────────────
-    st.markdown("""
-    <div class="sb-group">
-      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Filters</div>
-    </div>
-    """, unsafe_allow_html=True)
-    max_stops        = st.slider("Max stops", 0, 2, 1)
-    min_hotel_rating = st.slider("Min hotel rating ★", 1, 5, 3, 1)
-
-    # ── SORT ────────────────────────────────────────────────
-    st.markdown("""
-    <div class="sb-group">
-      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Sort</div>
-    </div>
-    """, unsafe_allow_html=True)
-    flight_sort = st.selectbox("Sort flights", ["Cheapest", "Fastest", "Fewest stops"], index=0)
-    hotel_sort  = st.selectbox("Sort hotels",  ["Top rated", "Cheapest"], index=0)
-
-    # ── CURRENCY ────────────────────────────────────────────
-    st.markdown("""
-    <div class="sb-group">
-      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Currency</div>
-    </div>
-    """, unsafe_allow_html=True)
-    currency = st.selectbox("Currency", ["USD", "SGD", "MYR", "JPY", "EUR", "GBP"], index=0, label_visibility="collapsed")
-
-    # ── HOW IT WORKS ────────────────────────────────────────
-    st.markdown("""
-    <div style="margin-top:1.2rem;">
-      <div class="sb-group-label" style="margin-bottom:0.75rem;"><div class="sb-group-label-dot"></div>How it works</div>
-      <div class="how-step"><div class="how-step-num">1</div>Enter cities &amp; dates</div>
-      <div class="how-step"><div class="how-step-num">2</div>Hit <strong style="color:var(--accent)!important;">Search</strong> or <strong style="color:var(--accent)!important;">Plan My Trip</strong></div>
-      <div class="how-step"><div class="how-step-num">3</div>Pick your flights &amp; hotels</div>
-      <div class="how-step"><div class="how-step-num">4</div>Generate AI itinerary &amp; tips</div>
-    </div>
-    """, unsafe_allow_html=True)
+# ── Sidebar fully removed — preferences live in the filter panel below ──
 
 # -------------------------
 # Route inputs
@@ -2069,6 +2009,129 @@ search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary"
 plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
 surprise_clicked = col_s3.button("🎲  Surprise Me!", use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Collapsible filter panel ─────────────────────────────────
+st.markdown("""
+<style>
+/* hide sidebar entirely */
+[data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none !important; }
+section.main > div { max-width: 100% !important; padding-left: 2rem !important; padding-right: 2rem !important; }
+
+/* filter panel */
+.filter-toggle-row button {
+  background: transparent !important;
+  border: 1px solid rgba(255,200,150,0.12) !important;
+  border-radius: 99px !important;
+  color: #a8896e !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  padding: 0.25rem 0.9rem !important;
+  height: auto !important;
+  min-height: 0 !important;
+  transition: all 0.15s !important;
+}
+.filter-toggle-row button:hover {
+  border-color: rgba(250,124,79,0.35) !important;
+  color: #fdf4ec !important;
+}
+.filter-panel {
+  background: rgba(28,16,6,0.85);
+  border: 1px solid rgba(255,200,150,0.10);
+  border-radius: 16px;
+  padding: 1.2rem 1.4rem 1rem;
+  margin-top: 0.5rem;
+}
+.fp-section {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a8896e !important;
+  margin-bottom: 0.45rem;
+  margin-top: 0.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.fp-section::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #fa7c4f;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.fp-divider {
+  height: 1px;
+  background: rgba(255,200,150,0.07);
+  margin: 0.9rem 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+if "show_filters" not in st.session_state:
+    st.session_state["show_filters"] = False
+
+st.markdown('<div class="filter-toggle-row">', unsafe_allow_html=True)
+_ft_col, _ = st.columns([1, 5])
+_filter_label = "⚙ Filters & Preferences ▾" if not st.session_state["show_filters"] else "⚙ Filters & Preferences ▴"
+if _ft_col.button(_filter_label, key="toggle_filters"):
+    st.session_state["show_filters"] = not st.session_state["show_filters"]
+    st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
+if st.session_state.get("show_filters"):
+    st.markdown('<div class="filter-panel">', unsafe_allow_html=True)
+
+    fp_r1c1, fp_r1c2, fp_r1c3, fp_r1c4 = st.columns([1.2, 1, 1, 0.8])
+
+    fp_r1c1.markdown('<div class="fp-section">Trip style</div>', unsafe_allow_html=True)
+    style = fp_r1c1.selectbox("Trip style", ["Balanced","Foodie","Culture","Nature","Shopping","Luxury","Budget"],
+                               index=0, label_visibility="collapsed", key="fp_style")
+
+    fp_r1c2.markdown('<div class="fp-section">Max flight price</div>', unsafe_allow_html=True)
+    max_flight_budget = fp_r1c2.number_input("Max flight price", min_value=0, max_value=10000, value=0,
+                                              step=50, help="0 = no limit", label_visibility="collapsed", key="fp_fbudget")
+
+    fp_r1c3.markdown('<div class="fp-section">Max hotel / night</div>', unsafe_allow_html=True)
+    max_hotel_budget = fp_r1c3.number_input("Max hotel price/night", min_value=0, max_value=2000, value=0,
+                                             step=10, help="0 = no limit", label_visibility="collapsed", key="fp_hbudget")
+
+    fp_r1c4.markdown('<div class="fp-section">Currency</div>', unsafe_allow_html=True)
+    currency = fp_r1c4.selectbox("Currency", ["USD","SGD","MYR","JPY","EUR","GBP"],
+                                  index=0, label_visibility="collapsed", key="fp_currency")
+
+    st.markdown('<div class="fp-divider"></div>', unsafe_allow_html=True)
+
+    fp_r2c1, fp_r2c2, fp_r2c3, fp_r2c4 = st.columns([1, 1, 1, 1])
+
+    fp_r2c1.markdown('<div class="fp-section">Max stops</div>', unsafe_allow_html=True)
+    max_stops = fp_r2c1.slider("Max stops", 0, 2, 1, key="fp_stops", label_visibility="collapsed")
+
+    fp_r2c2.markdown('<div class="fp-section">Min hotel rating ★</div>', unsafe_allow_html=True)
+    min_hotel_rating = fp_r2c2.slider("Min hotel rating", 1, 5, 3, key="fp_rating", label_visibility="collapsed")
+
+    fp_r2c3.markdown('<div class="fp-section">Sort flights</div>', unsafe_allow_html=True)
+    flight_sort = fp_r2c3.selectbox("Sort flights", ["Cheapest","Fastest","Fewest stops"],
+                                     index=0, label_visibility="collapsed", key="fp_fsort")
+
+    fp_r2c4.markdown('<div class="fp-section">Sort hotels</div>', unsafe_allow_html=True)
+    hotel_sort = fp_r2c4.selectbox("Sort hotels", ["Top rated","Cheapest"],
+                                    index=0, label_visibility="collapsed", key="fp_hsort")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+else:
+    # defaults when panel hidden
+    style            = st.session_state.get("fp_style",    "Balanced")
+    max_flight_budget= st.session_state.get("fp_fbudget",  0)
+    max_hotel_budget = st.session_state.get("fp_hbudget",  0)
+    currency         = st.session_state.get("fp_currency", "USD")
+    max_stops        = st.session_state.get("fp_stops",    1)
+    min_hotel_rating = st.session_state.get("fp_rating",   3)
+    flight_sort      = st.session_state.get("fp_fsort",    "Cheapest")
+    hotel_sort       = st.session_state.get("fp_hsort",    "Top rated")
 
 # -------------------------
 # Search
