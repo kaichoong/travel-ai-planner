@@ -91,7 +91,8 @@ def render_star_rating(rating: float) -> str:
     half = 1 if (rating % 2) >= 1 else 0
     empty = 5 - full - half
     stars = "★" * full + ("½" if half else "") + "☆" * empty
-    return f"{stars} {rating:.1f}"
+    score_5 = rating / 2.0
+    return f"{stars} {score_5:.1f}/5"
 
 # -------------------------
 # SerpAPI fetchers
@@ -129,7 +130,9 @@ async def get_hotels(serp_key, location, check_in, check_out, currency, min_rati
         raise RuntimeError(results["error"])
     props = results.get("properties", []) or []
     if min_rating > 0:
-        props = [p for p in props if float(p.get("overall_rating", 0) or 0) >= float(min_rating)]
+        # SerpAPI overall_rating is out of 10; user picks 1-5 stars → multiply by 2
+        threshold = float(min_rating) * 2.0
+        props = [p for p in props if float(p.get("overall_rating", 0) or 0) >= threshold]
     return props
 
 # -------------------------
@@ -633,7 +636,7 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-label">Filters</div>', unsafe_allow_html=True)
     max_stops = st.slider("Max stops", 0, 2, 1)
-    min_hotel_rating = st.slider("Min hotel rating", 0.0, 9.5, 8.0, 0.5)
+    min_hotel_rating = st.slider("Min hotel rating ★", 1, 5, 3, 1)
 
     st.markdown('<div class="sidebar-label">Sort</div>', unsafe_allow_html=True)
     flight_sort = st.selectbox("Sort flights", ["Cheapest", "Fastest", "Fewest stops"], index=0)
@@ -826,7 +829,7 @@ if flights or hotels_fmt:
                     reviews_txt = f" · {h['reviews_count']} reviews" if h.get("reviews_count") else ""
                     st.markdown(
                         f'<span class="stars">{stars_html}</span>'
-                        f'<span style="font-size:0.82rem;color:#6b7a94;margin-left:4px;">{h["rating"]:.1f}{reviews_txt}</span>',
+                        f'<span style="font-size:0.82rem;color:#6b7a94;margin-left:4px;">{h["rating"]/2:.1f}/5{reviews_txt}</span>',
                         unsafe_allow_html=True,
                     )
 
@@ -905,7 +908,7 @@ Flights:
 
             hotel_prompt = f"""You are an expert travel assistant.
 
-User preferences: trip style = {style}, min rating = {min_hotel_rating}, currency = {currency}.
+User preferences: trip style = {style}, min hotel stars = {min_hotel_rating}★ (out of 5), currency = {currency}.
 
 From the hotels below, recommend the best 2-3 options.
 Explain in Markdown with bullet points. Include links as plain text.
@@ -1014,7 +1017,7 @@ Keep it realistic and not overly packed.""".strip()
         export_md = f"""# AI Travel Plan — {o} → {d}
 
 **Dates:** {od} → {rd}
-**Trip style:** {style} · **Max stops:** {max_stops} · **Min hotel rating:** {min_hotel_rating} · **Currency:** {currency}
+**Trip style:** {style} · **Max stops:** {max_stops} · **Min hotel stars:** {min_hotel_rating}★ · **Currency:** {currency}
 
 ---
 
