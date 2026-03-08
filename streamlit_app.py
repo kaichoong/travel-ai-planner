@@ -143,6 +143,97 @@ CITY_TO_IATA = {
     "auckland":"AKL","christchurch":"CHC","nadi":"NAN",
 }
 
+# Cities with multiple major airports — user gets to pick
+MULTI_AIRPORT_CITIES = {
+    "bangkok":        [("BKK", "BKK — Suvarnabhumi (main international)"),
+                       ("DMK", "DMK — Don Mueang (budget/AirAsia)")],
+    "london":         [("LHR", "LHR — Heathrow (main international)"),
+                       ("LGW", "LGW — Gatwick"),
+                       ("STN", "STN — Stansted (budget)"),
+                       ("LTN", "LTN — Luton (budget)"),
+                       ("LCY", "LCY — City Airport")],
+    "new york":       [("JFK", "JFK — John F. Kennedy"),
+                       ("EWR", "EWR — Newark"),
+                       ("LGA", "LGA — LaGuardia (domestic)")],
+    "nyc":            [("JFK", "JFK — John F. Kennedy"),
+                       ("EWR", "EWR — Newark"),
+                       ("LGA", "LGA — LaGuardia (domestic)")],
+    "tokyo":          [("NRT", "NRT — Narita (main international)"),
+                       ("HND", "HND — Haneda (closer to city)")],
+    "paris":          [("CDG", "CDG — Charles de Gaulle (main)"),
+                       ("ORY", "ORY — Orly (shorter flights)")],
+    "milan":          [("MXP", "MXP — Malpensa (main international)"),
+                       ("LIN", "LIN — Linate (closer to city)"),
+                       ("BGY", "BGY — Bergamo/Orio (budget)")],
+    "chicago":        [("ORD", "ORD — O'Hare (main)"),
+                       ("MDW", "MDW — Midway (budget/Southwest)")],
+    "los angeles":    [("LAX", "LAX — Los Angeles International"),
+                       ("BUR", "BUR — Burbank (north LA)"),
+                       ("LGB", "LGB — Long Beach"),
+                       ("ONT", "ONT — Ontario (inland)")],
+    "la":             [("LAX", "LAX — Los Angeles International"),
+                       ("BUR", "BUR — Burbank"),
+                       ("LGB", "LGB — Long Beach")],
+    "washington":     [("IAD", "IAD — Dulles International"),
+                       ("DCA", "DCA — Reagan National (city)"),
+                       ("BWI", "BWI — Baltimore/Washington")],
+    "houston":        [("IAH", "IAH — George Bush Intercontinental"),
+                       ("HOU", "HOU — Hobby (Southwest/domestic)")],
+    "dallas":         [("DFW", "DFW — Dallas/Fort Worth (main)"),
+                       ("DAL", "DAL — Dallas Love Field (Southwest)")],
+    "miami":          [("MIA", "MIA — Miami International"),
+                       ("FLL", "FLL — Fort Lauderdale (budget/closer)")],
+    "san francisco":  [("SFO", "SFO — San Francisco International"),
+                       ("OAK", "OAK — Oakland (budget)"),
+                       ("SJC", "SJC — San Jose")],
+    "kuala lumpur":   [("KUL", "KUL — KLIA (main international)"),
+                       ("KUL", "KUL — KLIA2 (AirAsia hub)")],
+    "kl":             [("KUL", "KUL — KLIA (main)"),
+                       ("KUL", "KUL — KLIA2 (AirAsia)")],
+    "jakarta":        [("CGK", "CGK — Soekarno-Hatta (main)"),
+                       ("HLP", "HLP — Halim Perdanakusuma (domestic)")],
+    "seoul":          [("ICN", "ICN — Incheon (main international)"),
+                       ("GMP", "GMP — Gimpo (domestic/Japan/China)")],
+    "osaka":          [("KIX", "KIX — Kansai (main international)"),
+                       ("ITM", "ITM — Itami (domestic)")],
+    "rome":           [("FCO", "FCO — Fiumicino (main)"),
+                       ("CIA", "CIA — Ciampino (budget/Ryanair)")],
+    "barcelona":      [("BCN", "BCN — El Prat (main)"),
+                       ("GRO", "GRO — Girona (budget, 1hr away)")],
+    "amsterdam":      [("AMS", "AMS — Schiphol (main)"),
+                       ("EIN", "EIN — Eindhoven (budget, 1.5hr)")],
+    "moscow":         [("SVO", "SVO — Sheremetyevo (main)"),
+                       ("DME", "DME — Domodedovo"),
+                       ("VKO", "VKO — Vnukovo")],
+    "toronto":        [("YYZ", "YYZ — Pearson International (main)"),
+                       ("YTZ", "YTZ — Billy Bishop (downtown)")],
+    "sao paulo":      [("GRU", "GRU — Guarulhos (main international)"),
+                       ("CGH", "CGH — Congonhas (domestic/closer)")],
+    "buenos aires":   [("EZE", "EZE — Ezeiza (international)"),
+                       ("AEP", "AEP — Aeroparque (domestic/regional)")],
+    "sydney":         [("SYD", "SYD — Kingsford Smith (only major airport)")],
+    "melbourne":      [("MEL", "MEL — Tullamarine (main)"),
+                       ("AVV", "AVV — Avalon (budget/Jetstar)")],
+    "istanbul":       [("IST", "IST — Istanbul Airport (main, new)"),
+                       ("SAW", "SAW — Sabiha Gökçen (Asian side/budget)")],
+    "stockholm":      [("ARN", "ARN — Arlanda (main)"),
+                       ("BMA", "BMA — Bromma (domestic)"),
+                       ("NYO", "NYO — Skavsta (budget, 100km away)")],
+    "dubai":          [("DXB", "DXB — Dubai International (main)"),
+                       ("DWC", "DWC — Al Maktoum (some budget)")],
+}
+
+def get_airport_options(city_input: str):
+    """Return list of (IATA, label) if city has multiple airports, else None."""
+    key = city_input.strip().lower()
+    if key in MULTI_AIRPORT_CITIES and len(MULTI_AIRPORT_CITIES[key]) > 1:
+        return MULTI_AIRPORT_CITIES[key]
+    # partial match
+    for city, options in MULTI_AIRPORT_CITIES.items():
+        if city in key and len(options) > 1:
+            return options
+    return None
+
 def resolve_to_iata(name: str, gemini_client=None, gemini_model: str = "") -> str:
     """
     Convert a city/airport name to IATA code.
@@ -1032,35 +1123,57 @@ except Exception:
 # Row 1: origin + destination (2 cols) | outbound + return dates (2 cols)
 r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
 
-# Resolve city name → IATA live, display IATA in field + city name as confirmation below
-_origin_raw      = r1c1.text_input("From", value=st.session_state.get("origin_city", "Singapore"),
-                       placeholder="City, e.g. Singapore").strip()
-_destination_raw = r1c2.text_input("To",   value=st.session_state.get("destination_city", "Tokyo"),
-                       placeholder="City, e.g. Tokyo").strip()
+_pill_style = ("font-size:0.73rem;padding:0.22rem 0.55rem;"
+               "background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);"
+               "border-radius:6px;color:#fa7c4f;display:inline-block;margin-top:2px;")
 
-_orig_iata = resolve_to_iata(_origin_raw)
-_dest_iata = resolve_to_iata(_destination_raw)
+def _render_airport_input(col, label, state_key, state_iata_key, default_city, default_iata):
+    """
+    Renders a city text input. If the city has multiple airports, shows a
+    compact selectbox to pick one. Returns the final resolved IATA code.
+    """
+    raw = col.text_input(label, value=st.session_state.get(state_key, default_city),
+                         placeholder="City, e.g. Bangkok").strip()
+    st.session_state[state_key] = raw
 
-# Store city name separately from the IATA code used for API calls
-st.session_state["origin_city"]      = _origin_raw
-st.session_state["destination_city"] = _destination_raw
+    options = get_airport_options(raw)
 
-# Show resolved IATA + city confirmation beneath each field
-if _origin_raw:
-    _orig_known = _orig_iata != _origin_raw.upper()  # True if we resolved it
-    _orig_label = f"✈ {_orig_iata}  ·  {_origin_raw}" if _orig_known else f"✈ {_orig_iata}"
-    _orig_style = "font-size:0.75rem;margin-top:-0.5rem;padding:0.25rem 0.5rem;background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);border-radius:6px;color:#fa7c4f"
-    r1c1.markdown(f'<div style="{_orig_style}">{_orig_label}</div>', unsafe_allow_html=True)
+    if options:
+        # Multiple airports — show selectbox
+        opt_labels = [lbl for _, lbl in options]
+        opt_iatas  = [iata for iata, _ in options]
+        # Restore previous selection if same city
+        prev_iata = st.session_state.get(state_iata_key, opt_iatas[0])
+        prev_idx  = opt_iatas.index(prev_iata) if prev_iata in opt_iatas else 0
+        chosen_label = col.selectbox(
+            f"Airport for {raw}",
+            options=opt_labels,
+            index=prev_idx,
+            key=f"airport_sel_{state_key}",
+            label_visibility="collapsed",
+        )
+        chosen_iata = opt_iatas[opt_labels.index(chosen_label)]
+        st.session_state[state_iata_key] = chosen_iata
+        col.markdown(
+            f'<div style="{_pill_style}">✈ {chosen_iata}  ·  {raw}</div>',
+            unsafe_allow_html=True,
+        )
+        return chosen_iata
+    else:
+        # Single airport — auto-resolve and show pill
+        iata = resolve_to_iata(raw) if raw else default_iata
+        st.session_state[state_iata_key] = iata
+        if raw:
+            resolved = iata != raw.upper()
+            pill_text = f"✈ {iata}  ·  {raw}" if resolved else f"✈ {iata}"
+            col.markdown(
+                f'<div style="{_pill_style}">{pill_text}</div>',
+                unsafe_allow_html=True,
+            )
+        return iata
 
-if _destination_raw:
-    _dest_known = _dest_iata != _destination_raw.upper()
-    _dest_label = f"✈ {_dest_iata}  ·  {_destination_raw}" if _dest_known else f"✈ {_dest_iata}"
-    _dest_style = "font-size:0.75rem;margin-top:-0.5rem;padding:0.25rem 0.5rem;background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);border-radius:6px;color:#fa7c4f"
-    r1c2.markdown(f'<div style="{_dest_style}">{_dest_label}</div>', unsafe_allow_html=True)
-
-# These are what get used everywhere downstream
-origin      = _orig_iata
-destination = _dest_iata
+origin      = _render_airport_input(r1c1, "From", "origin_city",      "origin_iata",      "Singapore", "SIN")
+destination = _render_airport_input(r1c2, "To",   "destination_city", "destination_iata", "Tokyo",     "NRT")
 outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
 return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
 
