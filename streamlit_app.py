@@ -269,22 +269,28 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
 :root {
-  --bg:       #080c12;
-  --surface:  #0e1520;
-  --surface2: #141c28;
-  --border:   rgba(255,255,255,0.07);
-  --border2:  rgba(255,255,255,0.12);
-  --text:     #dde4f0;
-  --muted:    #6b7a94;
-  --accent:   #4f9cf9;
-  --accent2:  #38d9a9;
-  --warn:     #f5a623;
+  --bg:       #1a1008;
+  --surface:  #231508;
+  --surface2: #2c1c0e;
+  --border:   rgba(255,200,150,0.10);
+  --border2:  rgba(255,200,150,0.22);
+  --text:     #fdf4ec;
+  --muted:    #a8896e;
+  --accent:   #fa7c4f;
+  --accent2:  #ffb347;
+  --warn:     #f5c842;
   --radius:   14px;
   --radius-sm:9px;
 }
 
 /* ---------- base ---------- */
-html, body, [class*="css"] {
+html, body, [class*="css"],
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+section.main, .main .block-container,
+.stApp {
   background: var(--bg) !important;
   font-family: 'DM Sans', sans-serif !important;
   color: var(--text) !important;
@@ -302,7 +308,7 @@ p, li, span, label, div { color: var(--text) !important; }
 
 /* ---------- sidebar ---------- */
 [data-testid="stSidebar"] {
-  background: var(--surface) !important;
+  background: #1e1108 !important;
   border-right: 1px solid var(--border) !important;
 }
 [data-testid="stSidebar"] .block-container { padding-top: 1.5rem !important; }
@@ -333,7 +339,7 @@ div[data-testid="stTextInput"] input {
 }
 div[data-testid="stTextInput"] input:focus {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(79,156,249,0.12) !important;
+  box-shadow: 0 0 0 3px rgba(250,124,79,0.15) !important;
 }
 div[data-testid="stSelectbox"] > div,
 div[data-testid="stMultiSelect"] > div {
@@ -347,7 +353,7 @@ div[data-testid="stSlider"] * { color: var(--text) !important; }
 /* ---------- buttons ---------- */
 .stButton > button {
   background: var(--accent) !important;
-  color: #080c12 !important;
+  color: #1a1008 !important;
   border: 0 !important;
   border-radius: var(--radius-sm) !important;
   padding: 0.6rem 1.4rem !important;
@@ -370,7 +376,7 @@ div[data-testid="stSlider"] * { color: var(--text) !important; }
   transition: background 0.18s !important;
 }
 .stDownloadButton > button:hover {
-  background: rgba(79,156,249,0.1) !important;
+  background: rgba(250,124,79,0.12) !important;
 }
 
 /* ---------- tabs ---------- */
@@ -424,8 +430,8 @@ div[data-testid="stSlider"] * { color: var(--text) !important; }
 
 /* ---------- multiselect tags ---------- */
 [data-baseweb="tag"] {
-  background: rgba(79,156,249,0.15) !important;
-  border: 1px solid rgba(79,156,249,0.3) !important;
+  background: rgba(250,124,79,0.15) !important;
+  border: 1px solid rgba(250,124,79,0.35) !important;
   border-radius: 6px !important;
 }
 
@@ -452,9 +458,9 @@ div[data-testid="stSlider"] * { color: var(--text) !important; }
   border: 1px solid var(--border);
   margin-right: 0.35rem;
 }
-.pill-green { background: rgba(56,217,169,0.12); border-color: rgba(56,217,169,0.3); color: var(--accent2) !important; }
-.pill-blue  { background: rgba(79,156,249,0.12); border-color: rgba(79,156,249,0.3); color: var(--accent)  !important; }
-.pill-warn  { background: rgba(245,166,35,0.12);  border-color: rgba(245,166,35,0.3);  color: var(--warn)   !important; }
+.pill-green { background: rgba(255,179,71,0.14); border-color: rgba(255,179,71,0.35); color: var(--accent2) !important; }
+.pill-blue  { background: rgba(250,124,79,0.12); border-color: rgba(250,124,79,0.30); color: var(--accent)  !important; }
+.pill-warn  { background: rgba(245,200,66,0.12);  border-color: rgba(245,200,66,0.30);  color: var(--warn)   !important; }
 
 .route-line {
   display: flex;
@@ -552,7 +558,7 @@ div[data-testid="stSlider"] * { color: var(--text) !important; }
 # -------------------------
 st.markdown("""
 <div class="hero">
-  <h1>✈ AI Travel Planner</h1>
+  <h1><span style="color:#fa7c4f;">✈</span> AI Travel Planner</h1>
   <p class="hero-sub">Search flights & hotels · select your picks · let Gemini build your trip</p>
 </div>
 """, unsafe_allow_html=True)
