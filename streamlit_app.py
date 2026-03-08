@@ -97,17 +97,97 @@ def render_star_rating(rating: float) -> str:
 # -------------------------
 # SerpAPI fetchers
 # -------------------------
-async def get_flights(serp_key, origin, destination, out_date, ret_date, currency):
-    def _fmt_airport(s):
-        s = s.strip()
-        # If 3-letter code → uppercase IATA; otherwise pass city name as-is
-        return s.upper() if (len(s) == 3 and s.isalpha()) else s
+# ── City name → IATA lookup ───────────────────────────────────────────────────
+CITY_TO_IATA = {
+    # Southeast Asia
+    "singapore":"SIN","kuala lumpur":"KUL","kl":"KUL","bangkok":"BKK",
+    "phuket":"HKT","chiang mai":"CNX","ho chi minh":"SGN","saigon":"SGN",
+    "hanoi":"HAN","da nang":"DAD","bali":"DPS","denpasar":"DPS",
+    "jakarta":"CGK","surabaya":"SUB","manila":"MNL","cebu":"CEB",
+    "yangon":"RGN","phnom penh":"PNH","siem reap":"REP","vientiane":"VTE",
+    "colombo":"CMB","male":"MLE","kathmandu":"KTM","dhaka":"DAC",
+    # East Asia
+    "tokyo":"NRT","osaka":"KIX","kyoto":"KIX","sapporo":"CTS","fukuoka":"FUK",
+    "seoul":"ICN","busan":"PUS","beijing":"PEK","shanghai":"PVG",
+    "guangzhou":"CAN","shenzhen":"SZX","chengdu":"CTU","hong kong":"HKG",
+    "taipei":"TPE","taichung":"RMQ","macau":"MFM","ulaanbaatar":"ULN",
+    # South Asia
+    "mumbai":"BOM","bombay":"BOM","delhi":"DEL","new delhi":"DEL",
+    "bangalore":"BLR","bengaluru":"BLR","chennai":"MAA","hyderabad":"HYD",
+    "kolkata":"CCU","goa":"GOI","ahmedabad":"AMD","pune":"PNQ",
+    "islamabad":"ISB","karachi":"KHI","lahore":"LHE",
+    # Middle East
+    "dubai":"DXB","abu dhabi":"AUH","doha":"DOH","kuwait":"KWI",
+    "riyadh":"RUH","jeddah":"JED","muscat":"MCT","bahrain":"BAH",
+    "amman":"AMM","beirut":"BEY","tel aviv":"TLV",
+    # Europe
+    "london":"LHR","heathrow":"LHR","gatwick":"LGW","stansted":"STN",
+    "paris":"CDG","amsterdam":"AMS","frankfurt":"FRA","madrid":"MAD",
+    "barcelona":"BCN","rome":"FCO","milan":"MXP","munich":"MUC",
+    "vienna":"VIE","zurich":"ZRH","geneva":"GVA","brussels":"BRU",
+    "lisbon":"LIS","athens":"ATH","istanbul":"IST","dublin":"DUB",
+    "copenhagen":"CPH","stockholm":"ARN","oslo":"OSL","helsinki":"HEL",
+    "warsaw":"WAW","prague":"PRG","budapest":"BUD","bucharest":"OTP",
+    # Americas
+    "new york":"JFK","nyc":"JFK","los angeles":"LAX","la":"LAX",
+    "chicago":"ORD","miami":"MIA","san francisco":"SFO","seattle":"SEA",
+    "boston":"BOS","washington":"IAD","atlanta":"ATL","dallas":"DFW",
+    "houston":"IAH","denver":"DEN","las vegas":"LAS","honolulu":"HNL",
+    "toronto":"YYZ","vancouver":"YVR","montreal":"YUL","calgary":"YYC",
+    "mexico city":"MEX","cancun":"CUN","sao paulo":"GRU","rio de janeiro":"GIG",
+    "buenos aires":"EZE","lima":"LIM","bogota":"BOG","santiago":"SCL",
+    # Africa & Oceania
+    "nairobi":"NBO","johannesburg":"JNB","cape town":"CPT","cairo":"CAI",
+    "casablanca":"CMN","lagos":"LOS","accra":"ACC","addis ababa":"ADD",
+    "sydney":"SYD","melbourne":"MEL","brisbane":"BNE","perth":"PER",
+    "auckland":"AKL","christchurch":"CHC","nadi":"NAN",
+}
+
+def resolve_to_iata(name: str, gemini_client=None, gemini_model: str = "") -> str:
+    """
+    Convert a city/airport name to IATA code.
+    1. If already a 3-letter IATA code → return uppercase
+    2. Look up in CITY_TO_IATA table
+    3. Fallback: ask Gemini (sync, called inside run_async)
+    """
+    s = name.strip()
+    # Already IATA?
+    if len(s) == 3 and s.isalpha():
+        return s.upper()
+    key = s.lower()
+    if key in CITY_TO_IATA:
+        return CITY_TO_IATA[key]
+    # Partial match (e.g. "Phuket, Thailand" → "phuket")
+    for city, iata in CITY_TO_IATA.items():
+        if city in key:
+            return iata
+    # Gemini fallback
+    if gemini_client:
+        try:
+            prompt = (
+                f"What is the main commercial airport IATA code for: {s}? "
+                "Reply with ONLY the 3-letter uppercase IATA code, nothing else."
+            )
+            resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
+            code = (getattr(resp, "text", "") or "").strip().upper()
+            if len(code) == 3 and code.isalpha():
+                return code
+        except Exception:
+            pass
+    # Last resort: return as-is (SerpAPI may still handle it)
+    return s.upper()
+
+
+async def get_flights(serp_key, origin, destination, out_date, ret_date, currency,
+                      gemini_client=None, gemini_model=""):
+    origin_iata = resolve_to_iata(origin, gemini_client, gemini_model)
+    dest_iata   = resolve_to_iata(destination, gemini_client, gemini_model)
 
     params = {
         "engine": "google_flights",
         "api_key": serp_key,
-        "departure_id": _fmt_airport(origin),
-        "arrival_id":   _fmt_airport(destination),
+        "departure_id": origin_iata,
+        "arrival_id":   dest_iata,
         "outbound_date": out_date,
         "return_date": ret_date,
         "currency": currency,
@@ -124,14 +204,11 @@ async def get_price_for_date(serp_key, origin, destination, out_date, trip_lengt
     from datetime import date, timedelta
     try:
         ret = (date.fromisoformat(out_date) + timedelta(days=trip_length_days)).strftime("%Y-%m-%d")
-        def _fmt(s):
-            s = s.strip()
-            return s.upper() if (len(s) == 3 and s.isalpha()) else s
         params = {
             "engine": "google_flights",
             "api_key": serp_key,
-            "departure_id": _fmt(origin),
-            "arrival_id":   _fmt(destination),
+            "departure_id": resolve_to_iata(origin),
+            "arrival_id":   resolve_to_iata(destination),
             "outbound_date": out_date,
             "return_date": ret,
             "currency": currency,
@@ -956,6 +1033,14 @@ except Exception:
 r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
 origin      = r1c1.text_input("From", value=st.session_state.get("origin", "Singapore"), placeholder="City or airport, e.g. Singapore").strip()
 destination = r1c2.text_input("To", value=st.session_state.get("destination", "Tokyo"), placeholder="City or airport, e.g. Tokyo").strip()
+
+# Show resolved IATA codes as helper hints
+_orig_iata = resolve_to_iata(origin)
+_dest_iata = resolve_to_iata(destination)
+if origin:
+    r1c1.caption(f"→ {_orig_iata}")
+if destination:
+    r1c2.caption(f"→ {_dest_iata}")
 outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
 return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
 
@@ -985,7 +1070,7 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
 
     async def fetch_all():
         flights_raw, hotels_raw = await asyncio.gather(
-            get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency),
+            get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency, client, GEMINI_MODEL),
             get_hotels(SERPAPI_API_KEY, hotel_loc, out_d, ret_d, currency, min_hotel_rating),
         )
         return flights_raw, hotels_raw
