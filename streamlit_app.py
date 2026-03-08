@@ -326,30 +326,76 @@ p, li, span, label, div { color: var(--text) !important; }
   margin-top: 1.2rem;
 }
 
-/* ---------- inputs ---------- */
-div[data-testid="stTextInput"] input {
+/* ---------- top chrome bar ---------- */
+header[data-testid="stHeader"] {
+  background: var(--bg) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+/* ---------- text inputs ---------- */
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextInput"] input:hover {
   background: var(--surface2) !important;
   border: 1px solid var(--border2) !important;
   border-radius: var(--radius-sm) !important;
   color: var(--text) !important;
   font-family: 'DM Mono', monospace !important;
   font-size: 0.95rem !important;
-  padding: 0.55rem 0.75rem !important;
   transition: border-color 0.2s;
 }
 div[data-testid="stTextInput"] input:focus {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px rgba(250,124,79,0.15) !important;
+  outline: none !important;
 }
-div[data-testid="stSelectbox"] > div,
-div[data-testid="stMultiSelect"] > div {
+
+/* ---------- selectbox / multiselect ---------- */
+div[data-testid="stSelectbox"] > div > div,
+div[data-testid="stSelectbox"] > div > div > div,
+div[data-testid="stMultiSelect"] > div > div,
+div[data-testid="stMultiSelect"] > div > div > div,
+[data-baseweb="select"] > div,
+[data-baseweb="select"] > div > div {
   background: var(--surface2) !important;
   border: 1px solid var(--border2) !important;
   border-radius: var(--radius-sm) !important;
   color: var(--text) !important;
 }
-div[data-testid="stSlider"] * { color: var(--text) !important; }
+[data-baseweb="popover"] > div,
+[data-baseweb="menu"],
+ul[data-baseweb="menu"] {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius-sm) !important;
+}
+[data-baseweb="option"],
+[role="option"] {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+}
+[data-baseweb="option"]:hover,
+[role="option"]:hover {
+  background: rgba(250,124,79,0.18) !important;
+  color: var(--text) !important;
+}
+[aria-selected="true"][data-baseweb="option"],
+[aria-selected="true"][role="option"] {
+  background: rgba(250,124,79,0.25) !important;
+  color: var(--text) !important;
+}
+[data-baseweb="select"] span,
+[data-baseweb="select"] input { color: var(--text) !important; }
+[data-baseweb="select"] svg { fill: var(--muted) !important; }
 
+/* ---------- slider ---------- */
+div[data-testid="stSlider"] * { color: var(--text) !important; }
+div[data-testid="stSlider"] [role="slider"] {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
+  background: var(--accent) !important;
+}
 /* ---------- buttons ---------- */
 .stButton > button {
   background: var(--accent) !important;
