@@ -652,14 +652,88 @@ p, li, span, label, div { color: var(--text) !important; }
 
 /* ---------- sidebar ---------- */
 [data-testid="stSidebar"] {
-  background: #1e1108 !important;
-  border-right: 1px solid var(--border) !important;
+  background: #171009 !important;
+  border-right: 1px solid rgba(255,200,150,0.08) !important;
 }
-[data-testid="stSidebar"] .block-container { padding-top: 1.5rem !important; }
+[data-testid="stSidebar"] .block-container {
+  padding: 1.2rem 1rem 2rem !important;
+}
 [data-testid="stSidebar"] * { color: var(--text) !important; }
-[data-testid="stSidebar"] hr { border-color: var(--border) !important; }
+[data-testid="stSidebar"] hr { border-color: rgba(255,200,150,0.08) !important; }
 
-/* sidebar section label */
+/* sidebar title */
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text) !important;
+  margin-bottom: 1.4rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(255,200,150,0.08);
+}
+.sidebar-title-icon {
+  width: 28px; height: 28px;
+  background: rgba(250,124,79,0.15);
+  border: 1px solid rgba(250,124,79,0.28);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+/* sidebar section group */
+.sb-group {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,200,150,0.07);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem 0.65rem;
+  margin-bottom: 0.65rem;
+}
+.sb-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+  margin-bottom: 0.65rem;
+}
+.sb-group-label-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* how it works steps */
+.how-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.78rem;
+  color: var(--muted) !important;
+  line-height: 1.4;
+}
+.how-step-num {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(250,124,79,0.12);
+  border: 1px solid rgba(250,124,79,0.25);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--accent) !important;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* sidebar label (legacy, keep for compat) */
 .sidebar-label {
   font-size: 0.68rem;
   font-weight: 600;
@@ -1239,31 +1313,66 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # Sidebar
 # -------------------------
 with st.sidebar:
-    st.markdown("### ⚙ Preferences")
+    st.markdown("""
+    <div class="sidebar-title">
+      <div class="sidebar-title-icon">⚙</div>
+      Preferences
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-label">Trip style</div>', unsafe_allow_html=True)
+    # ── TRIP STYLE ──────────────────────────────────────────
+    st.markdown("""
+    <div class="sb-group">
+      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Trip style</div>
+    </div>
+    """, unsafe_allow_html=True)
     style = st.selectbox("Trip style", ["Balanced", "Foodie", "Culture", "Nature", "Shopping", "Luxury", "Budget"], index=0, label_visibility="collapsed")
 
-    st.markdown('<div class="sidebar-label">Budget</div>', unsafe_allow_html=True)
-    max_flight_budget = st.number_input("Max flight price", min_value=0, max_value=10000, value=0, step=50,
-        help="0 = no limit")
-    max_hotel_budget  = st.number_input("Max hotel price/night", min_value=0, max_value=2000, value=0, step=10,
-        help="0 = no limit")
+    # ── BUDGET ──────────────────────────────────────────────
+    st.markdown("""
+    <div class="sb-group">
+      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Budget</div>
+    </div>
+    """, unsafe_allow_html=True)
+    max_flight_budget = st.number_input("Max flight price", min_value=0, max_value=10000, value=0, step=50, help="0 = no limit")
+    max_hotel_budget  = st.number_input("Max hotel price/night", min_value=0, max_value=2000, value=0, step=10, help="0 = no limit")
 
-    st.markdown('<div class="sidebar-label">Filters</div>', unsafe_allow_html=True)
-    max_stops = st.slider("Max stops", 0, 2, 1)
+    # ── FILTERS ─────────────────────────────────────────────
+    st.markdown("""
+    <div class="sb-group">
+      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Filters</div>
+    </div>
+    """, unsafe_allow_html=True)
+    max_stops        = st.slider("Max stops", 0, 2, 1)
     min_hotel_rating = st.slider("Min hotel rating ★", 1, 5, 3, 1)
 
-    st.markdown('<div class="sidebar-label">Sort</div>', unsafe_allow_html=True)
+    # ── SORT ────────────────────────────────────────────────
+    st.markdown("""
+    <div class="sb-group">
+      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Sort</div>
+    </div>
+    """, unsafe_allow_html=True)
     flight_sort = st.selectbox("Sort flights", ["Cheapest", "Fastest", "Fewest stops"], index=0)
-    hotel_sort = st.selectbox("Sort hotels", ["Top rated", "Cheapest"], index=0)
+    hotel_sort  = st.selectbox("Sort hotels",  ["Top rated", "Cheapest"], index=0)
 
-    st.markdown('<div class="sidebar-label">Currency</div>', unsafe_allow_html=True)
+    # ── CURRENCY ────────────────────────────────────────────
+    st.markdown("""
+    <div class="sb-group">
+      <div class="sb-group-label"><div class="sb-group-label-dot"></div>Currency</div>
+    </div>
+    """, unsafe_allow_html=True)
     currency = st.selectbox("Currency", ["USD", "SGD", "MYR", "JPY", "EUR", "GBP"], index=0, label_visibility="collapsed")
 
-    st.markdown("---")
-    st.markdown('<div class="sidebar-label">How it works</div>', unsafe_allow_html=True)
-    st.caption("1. Enter cities & dates below\n2. Hit **Search** or **Plan My Entire Trip**\n3. Select flights & hotels\n4. Generate AI picks & itinerary")
+    # ── HOW IT WORKS ────────────────────────────────────────
+    st.markdown("""
+    <div style="margin-top:1.2rem;">
+      <div class="sb-group-label" style="margin-bottom:0.75rem;"><div class="sb-group-label-dot"></div>How it works</div>
+      <div class="how-step"><div class="how-step-num">1</div>Enter cities &amp; dates</div>
+      <div class="how-step"><div class="how-step-num">2</div>Hit <strong style="color:var(--accent)!important;">Search</strong> or <strong style="color:var(--accent)!important;">Plan My Trip</strong></div>
+      <div class="how-step"><div class="how-step-num">3</div>Pick your flights &amp; hotels</div>
+      <div class="how-step"><div class="how-step-num">4</div>Generate AI itinerary &amp; tips</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # -------------------------
 # Route inputs
