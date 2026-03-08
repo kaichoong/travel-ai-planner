@@ -834,7 +834,7 @@ Rules:
         return []
 
 
-st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="Travel Agent AI", page_icon="✈️", layout="wide")
 
 # -------------------------
 # CSS — Sleek Minimal Dark
@@ -1546,6 +1546,17 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 .price-insight-chip.saving  { background: rgba(255,179,71,0.08);  border: 1px solid rgba(255,179,71,0.22);  color: #ffb347 !important; }
 .price-insight-chip.warning { background: rgba(250,124,79,0.08);  border: 1px solid rgba(250,124,79,0.22);  color: #fa7c4f !important; }
 
+/* ---------- compact airport selectbox ---------- */
+div[data-testid="stSelectbox"][id*="airport_sel"] > div > div {
+  min-height: 0 !important;
+  padding: 0.2rem 0.6rem !important;
+  font-size: 0.75rem !important;
+  background: rgba(28,16,6,0.6) !important;
+  border: 1px solid rgba(255,200,150,0.12) !important;
+  border-radius: 7px !important;
+  color: #a8896e !important;
+}
+
 /* ---------- search form wrapper ---------- */
 .search-form {
   background: rgba(35,21,8,0.6);
@@ -1690,11 +1701,11 @@ div[data-testid="column"] > div { gap: 0 !important; }
 st.markdown("""
 <div class="hero">
   <div class="hero-inner">
-    <div class="hero-badge">✦ Powered by Gemini AI</div>
-    <h1>AI Travel Planner</h1>
+    <div class="hero-badge">✦ AI-Powered Travel Agent</div>
+    <h1>Plan Smarter. Travel Better.</h1>
     <p class="hero-sub">
-      Find flights & hotels, then let Gemini craft your complete
-      day-by-day itinerary, packing list and local tips — in one click.
+      Your personal AI travel agent — finds real-time flights & hotels,
+      then builds your complete day-by-day itinerary, packing list and local tips in one click.
     </p>
     <div class="hero-features">
       <div class="hero-feat"><div class="hero-feat-dot"></div>Real-time flight prices</div>
@@ -1861,7 +1872,7 @@ if st.session_state.get("show_inspire"):
     st.markdown("""
     <div class="inspire-panel">
       <div class="inspire-label">✦ Not sure where to go?</div>
-      <div class="inspire-hint">Describe your ideal trip and Gemini will figure out the destination, dates and budget for you.</div>
+      <div class="inspire-hint">Describe your ideal trip and our AI will figure out the destination, dates and budget for you.</div>
     </div>
     """, unsafe_allow_html=True)
     _ni_col, _np_col = st.columns([4, 1])
@@ -1924,20 +1935,22 @@ section.main > div { max-width: 100% !important; padding-left: 2rem !important; 
 /* filter panel */
 .filter-toggle-row button {
   background: transparent !important;
-  border: 1px solid rgba(255,200,150,0.12) !important;
-  border-radius: 99px !important;
-  color: #a8896e !important;
-  font-size: 0.72rem !important;
+  border: 1px solid rgba(255,200,150,0.10) !important;
+  border-radius: 8px !important;
+  color: #6b5240 !important;
+  font-size: 0.7rem !important;
   font-weight: 600 !important;
-  letter-spacing: 0.04em !important;
-  padding: 0.25rem 0.9rem !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  padding: 0.4rem 1rem !important;
   height: auto !important;
   min-height: 0 !important;
+  width: 100% !important;
   transition: all 0.15s !important;
 }
 .filter-toggle-row button:hover {
-  border-color: rgba(250,124,79,0.35) !important;
-  color: #fdf4ec !important;
+  border-color: rgba(250,124,79,0.25) !important;
+  color: #a8896e !important;
 }
 .filter-panel {
   background: rgba(28,16,6,0.85);
@@ -1978,9 +1991,8 @@ if "show_filters" not in st.session_state:
     st.session_state["show_filters"] = False
 
 st.markdown('<div class="filter-toggle-row">', unsafe_allow_html=True)
-_ft_col, _ = st.columns([1, 5])
-_filter_label = "⚙ Filters & Preferences ▾" if not st.session_state["show_filters"] else "⚙ Filters & Preferences ▴"
-if _ft_col.button(_filter_label, key="toggle_filters"):
+_filter_label = "⚙  Filters & Preferences  ▾" if not st.session_state["show_filters"] else "⚙  Filters & Preferences  ▴"
+if st.button(_filter_label, key="toggle_filters", use_container_width=True):
     st.session_state["show_filters"] = not st.session_state["show_filters"]
     st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
@@ -2393,7 +2405,7 @@ if flights or hotels_fmt:
         st.markdown(f"""
         <div style="margin-bottom:0.4rem;">
           <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a8896e;">
-            ✦ Gemini also suggests
+            ✦ You might also consider
           </span>
           <span style="font-size:0.68rem;color:#a8896e;margin-left:0.4rem;">
             — alternatives to {_dest_city} worth considering
@@ -2710,7 +2722,7 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
                 )
                 return f_md, h_md
 
-            with st.spinner("Asking Gemini..."):
+            with st.spinner("Thinking..."):
                 f_md, h_md = run_async(run_ai_picks())
                 st.session_state["ai_flights_md"] = f_md
                 st.session_state["ai_hotels_md"]  = h_md
@@ -2720,7 +2732,7 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
             <div class="ai-result-header">
               <div class="ai-result-icon flight">✈</div>
               <div><div class="ai-result-title">Recommended Flights</div>
-              <div class="ai-result-sub">Gemini\'s top picks based on price, duration &amp; stops</div></div>
+              <div class="ai-result-sub">Top picks based on price, duration &amp; stops</div></div>
             </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["ai_flights_md"])
 
@@ -2729,7 +2741,7 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
             <div class="ai-result-header" style="margin-top:1.5rem;">
               <div class="ai-result-icon hotel">🏨</div>
               <div><div class="ai-result-title">Recommended Hotels</div>
-              <div class="ai-result-sub">Gemini\'s top picks based on rating, location &amp; value</div></div>
+              <div class="ai-result-sub">Top picks based on rating, location &amp; value</div></div>
             </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["ai_hotels_md"])
 
@@ -2780,7 +2792,7 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
             <div class="empty-state" style="padding:1.5rem 0 0.5rem;">
               <div class="empty-icon">🗺</div>
               <div class="empty-title">Personalise your itinerary</div>
-              <div class="empty-sub">Answer 3 quick questions so Gemini can tailor your day-by-day plan.</div>
+              <div class="empty-sub">Answer 3 quick questions so your AI agent can tailor your day-by-day plan.</div>
             </div>""", unsafe_allow_html=True)
 
         # ── Personalisation questions ─────────────────────────
