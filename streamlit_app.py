@@ -778,6 +778,12 @@ with st.sidebar:
     st.markdown('<div class="sidebar-label">Trip style</div>', unsafe_allow_html=True)
     style = st.selectbox("Trip style", ["Balanced", "Foodie", "Culture", "Nature", "Shopping", "Luxury", "Budget"], index=0, label_visibility="collapsed")
 
+    st.markdown('<div class="sidebar-label">Budget</div>', unsafe_allow_html=True)
+    max_flight_budget = st.number_input("Max flight price", min_value=0, max_value=10000, value=0, step=50,
+        help="0 = no limit")
+    max_hotel_budget  = st.number_input("Max hotel price/night", min_value=0, max_value=2000, value=0, step=10,
+        help="0 = no limit")
+
     st.markdown('<div class="sidebar-label">Filters</div>', unsafe_allow_html=True)
     max_stops = st.slider("Max stops", 0, 2, 1)
     min_hotel_rating = st.slider("Min hotel rating ★", 1, 5, 3, 1)
@@ -831,12 +837,51 @@ location = st.text_input(
     placeholder="e.g. Tokyo, Shinjuku"
 ).strip()
 
-search_clicked = st.button("Search Flights & Hotels", type="primary")
+col_s1, col_s2 = st.columns([1, 1])
+search_clicked = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
+plan_clicked   = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
 
 # -------------------------
 # Search
 # -------------------------
-if search_clicked:
+def _do_search(origin, destination, out_d, ret_d, location, currency,
+               min_hotel_rating, max_flight_budget, max_hotel_budget,
+               flight_sort, hotel_sort):
+    """Shared search logic used by both Search and Plan buttons."""
+    hotel_loc = location or destination
+
+    async def fetch_all():
+        flights_raw, hotels_raw = await asyncio.gather(
+            get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency),
+            get_hotels(SERPAPI_API_KEY, hotel_loc, out_d, ret_d, currency, min_hotel_rating),
+        )
+        return flights_raw, hotels_raw
+
+    flights_raw, hotels_raw = run_async(fetch_all())
+    flights    = sort_flights(fmt_flights(flights_raw, origin, destination, out_d, ret_d), flight_sort)
+    hotels_fmt = sort_hotels(fmt_hotels(hotels_raw, hotel_loc, out_d, ret_d), hotel_sort)
+
+    if max_flight_budget > 0:
+        flights = [f for f in flights if _parse_price(f.get("price")) <= max_flight_budget]
+    if max_hotel_budget > 0:
+        hotels_fmt = [h for h in hotels_fmt if _parse_price(h.get("price")) <= max_hotel_budget]
+
+    st.session_state.update({
+        "origin": origin, "destination": destination,
+        "outbound_date": out_d, "return_date": ret_d,
+        "location": location, "hotel_loc": hotel_loc,
+        "flights": flights, "hotels": hotels_fmt,
+        "max_flight_budget": max_flight_budget,
+        "max_hotel_budget":  max_hotel_budget,
+        "selected_flights": [], "selected_hotels": [],
+        "ai_flights_md": "", "ai_hotels_md": "",
+        "itinerary_md": "", "tips_md": "", "insights_md": "",
+        "packing_md": "", "visa_md": "",
+    })
+    return flights, hotels_fmt, hotel_loc
+
+
+if search_clicked or plan_clicked:
     try:
         out_d = outbound_date
         ret_d = return_date
@@ -844,34 +889,107 @@ if search_clicked:
         if return_date_obj <= outbound_date_obj:
             st.error("Return date must be after outbound date.")
             st.stop()
-
         if origin and destination and origin == destination:
             st.error("Origin and destination cannot be the same.")
             st.stop()
 
-        hotel_loc = location or destination
-
-        async def fetch_all():
-            flights_raw, hotels_raw = await asyncio.gather(
-                get_flights(SERPAPI_API_KEY, origin, destination, out_d, ret_d, currency),
-                get_hotels(SERPAPI_API_KEY, hotel_loc, out_d, ret_d, currency, min_hotel_rating),
-            )
-            return flights_raw, hotels_raw
-
         with st.spinner("Searching flights & hotels..."):
-            flights_raw, hotels_raw = run_async(fetch_all())
+            flights, hotels_fmt, hotel_loc = _do_search(
+                origin, destination, out_d, ret_d, location, currency,
+                min_hotel_rating, max_flight_budget, max_hotel_budget,
+                flight_sort, hotel_sort,
+            )
 
-        flights   = sort_flights(fmt_flights(flights_raw, origin, destination, out_d, ret_d), flight_sort)
-        hotels_fmt = sort_hotels(fmt_hotels(hotels_raw, hotel_loc, out_d, ret_d), hotel_sort)
+        if plan_clicked and (flights or hotels_fmt):
+            # ── ONE-CLICK: run all AI in parallel ──────────────────
+            _ft = fmt_flights_for_ai(flights[:6])
+            _ht = fmt_hotels_for_ai(hotels_fmt[:6])
+            _dest = destination
+            _nights = (return_date_obj - outbound_date_obj).days
 
-        st.session_state.update({
-            "origin": origin, "destination": destination,
-            "outbound_date": out_d, "return_date": ret_d, "location": location,
-            "flights": flights, "hotels": hotels_fmt,
-            "selected_flights": [], "selected_hotels": [],
-            "ai_flights_md": "", "ai_hotels_md": "",
-            "itinerary_md": "", "tips_md": "", "insights_md": "",
-        })
+            fp = f"""You are an expert travel assistant.
+Route: {origin} → {_dest} | Dates: {out_d} to {ret_d}
+Trip style: {style} | Max stops: {max_stops} | Currency: {currency}
+Budget: flights ≤ {'any' if max_flight_budget==0 else f'{currency} {max_flight_budget}'}
+
+Available flights:
+{_ft}
+
+Recommend the best 1-2 flights with 2-3 bullet reasons each. Include booking links."""
+
+            hp = f"""You are an expert travel assistant.
+Location: {hotel_loc} | Dates: {out_d} to {ret_d}
+Trip style: {style} | Min rating: {min_hotel_rating}★ | Currency: {currency}
+Budget: hotels ≤ {'any' if max_hotel_budget==0 else f'{currency} {max_hotel_budget}'}/night
+
+Available hotels:
+{_ht}
+
+Recommend the best 2-3 hotels with 2-3 bullet reasons each. Include listing links."""
+
+            ip = f"""Create a practical {_nights}-day Markdown itinerary for {_dest} ({out_d} to {ret_d}).
+Trip style: {style}. For each day: Morning/Afternoon/Evening. Include 2-3 food ideas per day."""
+
+            tp = f"""Concise Markdown travel tips for {_dest}:
+- Best areas to stay (2-4)
+- Getting around
+- Budget tips
+- 5 tourist mistakes to avoid
+- 5 local etiquette tips"""
+
+            ins_p = f"""Travel review summary for {_dest} in Markdown:
+### 🌟 Overall Vibe
+### ❤️ What Travellers Love
+### 😬 Common Complaints
+### 🗓 Best Time to Visit
+### 💡 Insider Tips
+Be specific and honest."""
+
+            pack_p = f"""Generate a smart packing list in Markdown for:
+- Destination: {_dest}
+- Trip duration: {_nights} nights
+- Trip style: {style}
+- Dates: {out_d} to {ret_d}
+
+Sections: 👕 Clothing, 🧴 Toiletries, 💊 Health & Safety, 📱 Tech & Documents, 🎒 Day-trip Essentials.
+Keep it practical, not exhaustive. Flag destination-specific items (e.g. temple dress code, mosquito repellent)."""
+
+            visa_p = f"""Provide a concise Markdown visa & entry requirements summary for travellers going to {_dest}.
+Include:
+### 🛂 Visa Overview
+- Common nationalities that get visa-free / visa-on-arrival
+- Who needs to apply in advance
+### 📋 Entry Requirements
+- Passport validity rules
+- Common documents needed
+- Health / vaccination requirements if any
+### ⚠️ Important Notes
+- Any recent policy changes worth flagging
+
+Keep it factual. Note that requirements vary by nationality and travellers should verify with official embassy sources."""
+
+            async def run_plan_all():
+                results = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, fp),
+                    gemini_call(client, GEMINI_MODEL, hp),
+                    gemini_call(client, GEMINI_MODEL, ip),
+                    gemini_call(client, GEMINI_MODEL, tp),
+                    gemini_call(client, GEMINI_MODEL, ins_p),
+                    gemini_call(client, GEMINI_MODEL, pack_p),
+                    gemini_call(client, GEMINI_MODEL, visa_p),
+                )
+                return results
+
+            with st.spinner("✨ Gemini is planning your entire trip — hang tight..."):
+                f_md, h_md, i_md, t_md, ins_md, pack_md, visa_md = run_async(run_plan_all())
+
+            st.session_state.update({
+                "ai_flights_md": f_md, "ai_hotels_md": h_md,
+                "itinerary_md": i_md,  "tips_md": t_md,
+                "insights_md": ins_md,
+                "packing_md": pack_md, "visa_md": visa_md,
+            })
+            st.success("✅ Your full trip plan is ready! Browse the tabs below.")
 
     except Exception as e:
         st.error(str(e))
@@ -911,10 +1029,14 @@ if flights or hotels_fmt:
       <span style="color:#a8896e !important;font-size:0.85rem;">📅 {_od} → {_rd} &nbsp;·&nbsp; {_nights_str}</span>
       <span style="color:#a8896e !important;font-size:0.85rem;">✈ {_nf} flight{'s' if _nf != 1 else ''} found</span>
       <span style="color:#a8896e !important;font-size:0.85rem;">🏨 {_nh} hotel{'s' if _nh != 1 else ''} found</span>
+      {'<span style="color:#a8896e !important;font-size:0.85rem;">💰 Budget filtered</span>' if (st.session_state.get("max_flight_budget",0) or st.session_state.get("max_hotel_budget",0)) else ''}
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["✈  Flights", "🏨  Hotels", "✦  AI Picks", "🗺  Itinerary", "🌍  Destination"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "✈  Flights", "🏨  Hotels", "✦  AI Picks",
+        "🗺  Itinerary", "🌍  Destination", "🎒  Essentials"
+    ])
 
     # ==============================
     # TAB 1 — Flights
@@ -1256,6 +1378,16 @@ Keep it realistic and not overly packed.""".strip()
 
 ## 🌍 Destination Insights
 {st.session_state.get("insights_md", "_(not generated)_")}
+
+---
+
+## 🎒 Packing List
+{st.session_state.get("packing_md", "_(not generated)_")}
+
+---
+
+## 🛂 Visa & Entry
+{st.session_state.get("visa_md", "_(not generated)_")}
 """
         st.download_button(
             "⬇  Download as Markdown",
@@ -1309,12 +1441,116 @@ Keep it honest, specific and genuinely useful. Avoid generic travel blog fluff."
         if st.session_state.get("insights_md"):
             st.markdown(st.session_state["insights_md"])
 
+    # ==============================
+    # TAB 6 — Essentials (Packing + Visa + Share)
+    # ==============================
+    with tab6:
+        dest2  = st.session_state.get("destination", "")
+        out_d2 = st.session_state.get("outbound_date", "")
+        ret_d2 = st.session_state.get("return_date", "")
+        try:
+            _n2 = (date.fromisoformat(ret_d2) - date.fromisoformat(out_d2)).days
+        except Exception:
+            _n2 = 7
+
+        has_essentials = st.session_state.get("packing_md") or st.session_state.get("visa_md")
+        if not has_essentials:
+            st.markdown(f"""
+            <div class="empty-state">
+              <div class="empty-icon">🎒</div>
+              <div class="empty-title">Packing list & visa info</div>
+              <div class="empty-sub">Generate a smart packing list and entry requirements for {dest2}.</div>
+            </div>""", unsafe_allow_html=True)
+
+        if st.button("Generate Packing List & Visa Info", type="primary", key="btn_essentials"):
+            pack_p2 = f"""Generate a smart packing list in Markdown for:
+- Destination: {dest2}
+- Trip duration: {_n2} nights
+- Trip style: {style}
+- Dates: {out_d2} to {ret_d2}
+
+Sections: 👕 Clothing, 🧴 Toiletries, 💊 Health & Safety, 📱 Tech & Documents, 🎒 Day-trip Essentials.
+Keep it practical. Flag destination-specific items (e.g. temple dress code, rain gear, adapters)."""
+
+            visa_p2 = f"""Concise Markdown visa & entry requirements for travellers visiting {dest2}.
+
+### 🛂 Visa Overview
+- Nationalities that get visa-free / visa-on-arrival
+- Who needs advance application
+
+### 📋 Entry Requirements
+- Passport validity
+- Common documents
+- Health / vaccination requirements
+
+### ⚠️ Important Notes
+- Recent policy changes
+- Always verify with official embassy sources."""
+
+            async def run_essentials():
+                p_md, v_md = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, pack_p2),
+                    gemini_call(client, GEMINI_MODEL, visa_p2),
+                )
+                return p_md, v_md
+
+            with st.spinner("Generating packing list & visa info..."):
+                p_md, v_md = run_async(run_essentials())
+                st.session_state["packing_md"] = p_md
+                st.session_state["visa_md"]    = v_md
+
+        if st.session_state.get("packing_md"):
+            st.markdown("### 🎒 Packing List")
+            st.markdown(st.session_state["packing_md"])
+
+        if st.session_state.get("visa_md"):
+            st.markdown("---")
+            st.markdown("### 🛂 Visa & Entry Requirements")
+            st.markdown(st.session_state["visa_md"])
+
+        # ── WHATSAPP / EMAIL SHARE ──────────────────────────────
+        st.markdown("---")
+        st.markdown("### 📤 Share this trip")
+
+        _o2  = st.session_state.get("origin", "")
+        _d2  = st.session_state.get("destination", "")
+        _od2 = st.session_state.get("outbound_date", "")
+        _rd2 = st.session_state.get("return_date", "")
+
+        share_text = (
+            f"✈ AI Travel Plan: {_o2} → {_d2}\n"
+            f"📅 {_od2} to {_rd2} ({_n2} nights)\n"
+            f"🌐 Plan yours free at: https://travel-ai-planner-tcghmxw5yc5z5dst8xarek.streamlit.app"
+        )
+
+        from urllib.parse import quote as url_quote
+        wa_url    = f"https://wa.me/?text={url_quote(share_text)}"
+        email_url = f"mailto:?subject={url_quote(f'Trip Plan: {_o2} to {_d2}')}&body={url_quote(share_text)}"
+
+        sh1, sh2 = st.columns(2)
+        sh1.markdown(
+            f'<a href="{wa_url}" target="_blank" style="'
+            f'display:block;text-align:center;padding:0.6rem 1rem;'
+            f'background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.35);'
+            f'border-radius:10px;color:#25d366 !important;font-weight:600;font-size:0.9rem;'
+            f'text-decoration:none;">📱 Share on WhatsApp</a>',
+            unsafe_allow_html=True,
+        )
+        sh2.markdown(
+            f'<a href="{email_url}" style="'
+            f'display:block;text-align:center;padding:0.6rem 1rem;'
+            f'background:rgba(250,124,79,0.12);border:1px solid rgba(250,124,79,0.3);'
+            f'border-radius:10px;color:#fa7c4f !important;font-weight:600;font-size:0.9rem;'
+            f'text-decoration:none;">✉️ Share via Email</a>',
+            unsafe_allow_html=True,
+        )
+
 else:
     # ---- Landing empty state ----
     st.markdown("""
     <div class="empty-state" style="padding: 5rem 1rem;">
       <div class="empty-icon">🌍</div>
       <div class="empty-title" style="font-size:1.1rem;">Where are you going?</div>
-      <div class="empty-sub">Enter your origin, destination and dates above, then hit <strong>Search</strong>.</div>
+      <div class="empty-sub">Enter your route & dates above — then hit <strong>Search</strong> or <strong>Plan My Entire Trip</strong> for a full AI itinerary in one click.</div>
     </div>
     """, unsafe_allow_html=True)
