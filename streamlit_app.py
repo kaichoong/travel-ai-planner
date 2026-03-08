@@ -98,11 +98,16 @@ def render_star_rating(rating: float) -> str:
 # SerpAPI fetchers
 # -------------------------
 async def get_flights(serp_key, origin, destination, out_date, ret_date, currency):
+    def _fmt_airport(s):
+        s = s.strip()
+        # If 3-letter code → uppercase IATA; otherwise pass city name as-is
+        return s.upper() if (len(s) == 3 and s.isalpha()) else s
+
     params = {
         "engine": "google_flights",
         "api_key": serp_key,
-        "departure_id": origin.upper(),
-        "arrival_id": destination.upper(),
+        "departure_id": _fmt_airport(origin),
+        "arrival_id":   _fmt_airport(destination),
         "outbound_date": out_date,
         "return_date": ret_date,
         "currency": currency,
@@ -119,11 +124,14 @@ async def get_price_for_date(serp_key, origin, destination, out_date, trip_lengt
     from datetime import date, timedelta
     try:
         ret = (date.fromisoformat(out_date) + timedelta(days=trip_length_days)).strftime("%Y-%m-%d")
+        def _fmt(s):
+            s = s.strip()
+            return s.upper() if (len(s) == 3 and s.isalpha()) else s
         params = {
             "engine": "google_flights",
             "api_key": serp_key,
-            "departure_id": origin.upper(),
-            "arrival_id": destination.upper(),
+            "departure_id": _fmt(origin),
+            "arrival_id":   _fmt(destination),
             "outbound_date": out_date,
             "return_date": ret,
             "currency": currency,
@@ -185,7 +193,9 @@ async def get_weather(destination_iata: str, start_date: str, end_date: str) -> 
         "MNL":"Manila","CGK":"Jakarta","SGN":"Ho Chi Minh City","HAN":"Hanoi",
         "RGN":"Yangon","CMB":"Colombo","DAC":"Dhaka","KTM":"Kathmandu",
     }
-    city = IATA_CITY.get(destination_iata.upper(), destination_iata)
+    # Try IATA lookup first; if not found treat the input as a city name directly
+    _key = destination_iata.strip().upper()
+    city = IATA_CITY.get(_key, destination_iata.strip())
 
     try:
         # Step 1: geocode
@@ -629,6 +639,33 @@ ul[data-baseweb="menu"] {
 [data-baseweb="select"] input { color: var(--text) !important; }
 [data-baseweb="select"] svg { fill: var(--muted) !important; }
 
+/* ---------- number input ---------- */
+div[data-testid="stNumberInput"] input,
+div[data-testid="stNumberInput"] input:hover,
+div[data-testid="stNumberInput"] input:focus {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text) !important;
+  font-family: 'DM Mono', monospace !important;
+}
+div[data-testid="stNumberInput"] > div,
+div[data-testid="stNumberInput"] > div > div {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius-sm) !important;
+}
+/* +/- stepper buttons */
+div[data-testid="stNumberInput"] button {
+  background: var(--surface2) !important;
+  border: 0 !important;
+  color: var(--muted) !important;
+}
+div[data-testid="stNumberInput"] button:hover {
+  background: rgba(250,124,79,0.15) !important;
+  color: var(--text) !important;
+}
+
 /* ---------- slider ---------- */
 div[data-testid="stSlider"] * { color: var(--text) !important; }
 div[data-testid="stSlider"] [role="slider"] {
@@ -892,7 +929,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown('<div class="sidebar-label">How it works</div>', unsafe_allow_html=True)
-    st.caption("1. Enter your route & dates below\n2. Hit **Search**\n3. Select up to 3 flights & 3 hotels\n4. Generate AI picks & itinerary")
+    st.caption("1. Enter cities & dates below\n2. Hit **Search** or **Plan My Entire Trip**\n3. Select flights & hotels\n4. Generate AI picks & itinerary")
 
 # -------------------------
 # Route inputs
@@ -917,8 +954,8 @@ except Exception:
 
 # Row 1: origin + destination (2 cols) | outbound + return dates (2 cols)
 r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
-origin      = r1c1.text_input("Origin (IATA)", value=st.session_state.get("origin", "SIN"), placeholder="e.g. SIN").strip().upper()
-destination = r1c2.text_input("Destination (IATA)", value=st.session_state.get("destination", "NRT"), placeholder="e.g. NRT").strip().upper()
+origin      = r1c1.text_input("From", value=st.session_state.get("origin", "Singapore"), placeholder="City or airport, e.g. Singapore").strip()
+destination = r1c2.text_input("To", value=st.session_state.get("destination", "Tokyo"), placeholder="City or airport, e.g. Tokyo").strip()
 outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
 return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
 
@@ -1256,7 +1293,7 @@ if flights or hotels_fmt:
             <div class="empty-state">
               <div class="empty-icon">✈️</div>
               <div class="empty-title">No flights found</div>
-              <div class="empty-sub">Try different dates, route, or check the IATA codes.</div>
+              <div class="empty-sub">Try different dates, route, or check the city/airport names.</div>
             </div>""", unsafe_allow_html=True)
         else:
             # ── PRICE CALENDAR ───────────────────────────────────
