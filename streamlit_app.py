@@ -560,6 +560,31 @@ def clamp_multiselect(selection, limit):
         return selection, False
     return selection[:limit], True
 
+def _deal_badge_html(score_data: dict) -> str:
+    """Return HTML for a deal score badge given a score dict {score, label, reason}."""
+    if not score_data:
+        return ""
+    score  = score_data.get("score", 0)
+    label  = score_data.get("label", "")
+    reason = score_data.get("reason", "")
+    label_lower = label.lower().replace(" ", "")
+    css_cls = {
+        "exceptional": "exceptional",
+        "greatdeal":   "great",
+        "goodvalue":   "good",
+        "average":     "average",
+        "overpriced":  "overpriced",
+    }.get(label_lower, "average")
+    icon = {"exceptional":"✦","great":"↑","good":"·","average":"–","overpriced":"↓"}.get(css_cls, "·")
+    badge = (
+        f'<span class="deal-badge {css_cls}">'
+        f'<span class="deal-score-num">{score}</span>'
+        f' {icon} {label}'
+        f'</span>'
+    )
+    reason_html = f'<div class="deal-reason">"{reason}"</div>' if reason else ""
+    return badge + reason_html
+
 def fmt_duration(mins):
     if mins is None:
         return "—"
@@ -601,8 +626,74 @@ def fmt_hotels_for_ai(hotels_list: list) -> str:
     return "\n".join(lines)
 
 # -------------------------
-# Page config
+# AI Deal Scoring
 # -------------------------
+async def get_deal_scores(client, model, flights, hotels, origin, destination, out_d, ret_d, currency, style):
+    """
+    Single Gemini call that scores all flights + hotels.
+    Returns dict: {"flights": [{score, label, reason}, ...], "hotels": [...]}
+    Scores 1-10. Label = "Exceptional" / "Great Deal" / "Good Value" / "Average" / "Overpriced"
+    """
+    if not flights and not hotels:
+        return {"flights": [], "hotels": []}
+
+    f_lines = []
+    for i, f in enumerate(flights[:10], 1):
+        dur = fmt_duration(f.get("duration_min"))
+        f_lines.append(f"F{i}: {f.get('airline','?')} | {f.get('price','?')} | {f.get('stops','?')} | {dur} | {f.get('class','Economy')}")
+
+    h_lines = []
+    for i, h in enumerate(hotels[:12], 1):
+        rs = h.get("review_score", h.get("rating", 0))
+        hc = h.get("hotel_class", 0) or 0
+        h_lines.append(f"H{i}: {h.get('name','?')} | {h.get('price','?')}/night | {hc}★ class | {rs:.1f}/10 review | {h.get('area','?')}")
+
+    prompt = f"""You are a travel deal analyst. Score each flight and hotel as a deal for a {style} traveller.
+
+Route: {origin} → {destination} | Dates: {out_d} to {ret_d} | Currency: {currency}
+
+FLIGHTS:
+{chr(10).join(f_lines) if f_lines else "None"}
+
+HOTELS:
+{chr(10).join(h_lines) if h_lines else "None"}
+
+Return ONLY valid JSON, no markdown, no explanation:
+{{
+  "flights": [
+    {{"id": "F1", "score": 8, "label": "Great Deal", "reason": "Nonstop at a competitive price"}},
+    ...
+  ],
+  "hotels": [
+    {{"id": "H1", "score": 9, "label": "Exceptional", "reason": "Top-rated with breakfast included at a low price"}},
+    ...
+  ]
+}}
+
+Scoring guide:
+- 9-10: Exceptional — outstanding value or quality
+- 7-8: Great Deal — clearly above average
+- 5-6: Good Value — fair for what it offers
+- 3-4: Average — nothing special
+- 1-2: Overpriced — poor value for money
+
+Labels must be one of: Exceptional, Great Deal, Good Value, Average, Overpriced
+Keep reasons under 8 words. Be honest and specific."""
+
+    try:
+        raw = await gemini_call(client, model, prompt)
+        # Strip markdown fences if present
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        import json
+        return json.loads(raw.strip())
+    except Exception:
+        return {"flights": [], "hotels": []}
+
+
 st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
 
 # -------------------------
@@ -1125,6 +1216,36 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 }
 .link-btn:hover { text-decoration: underline; }
 
+/* ── deal score badge ── */
+.deal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.deal-badge.exceptional { background: rgba(56,217,106,0.15);  border: 1px solid rgba(56,217,106,0.35);  color: #38d96a !important; }
+.deal-badge.great       { background: rgba(100,210,255,0.12); border: 1px solid rgba(100,210,255,0.30); color: #64d2ff !important; }
+.deal-badge.good        { background: rgba(255,179,71,0.12);  border: 1px solid rgba(255,179,71,0.30);  color: #ffb347 !important; }
+.deal-badge.average     { background: rgba(168,137,110,0.12); border: 1px solid rgba(168,137,110,0.25); color: #a8896e !important; }
+.deal-badge.overpriced  { background: rgba(250,124,79,0.12);  border: 1px solid rgba(250,124,79,0.28);  color: #fa7c4f !important; }
+.deal-score-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.deal-reason {
+  font-size: 0.7rem;
+  color: var(--muted) !important;
+  margin-top: 3px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
 /* ---------- empty state ---------- */
 .empty-state {
   text-align: center;
@@ -1517,7 +1638,7 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
         "ai_flights_md": "", "ai_hotels_md": "",
         "itinerary_md": "", "tips_md": "", "insights_md": "",
         "packing_md": "", "visa_md": "", "weather": {},
-        "price_calendar": {},
+        "price_calendar": {}, "deal_scores": {},
     })
     return flights, hotels_fmt, hotel_loc
 
@@ -1599,6 +1720,15 @@ if search_clicked or plan_clicked:
                 min_hotel_rating, max_flight_budget, max_hotel_budget,
                 flight_sort, hotel_sort,
             )
+
+        # ── AI deal scoring (runs after search, single Gemini call) ──
+        if flights or hotels_fmt:
+            with st.spinner("✦ Scoring deals with AI..."):
+                _scores = run_async(get_deal_scores(
+                    client, GEMINI_MODEL, flights, hotels_fmt,
+                    origin, destination, out_d, ret_d, currency, style
+                ))
+                st.session_state["deal_scores"] = _scores
 
         if plan_clicked and (flights or hotels_fmt):
             # ── ONE-CLICK: run all AI in parallel ──────────────────
@@ -1874,6 +2004,7 @@ if flights or hotels_fmt:
             st.session_state["selected_flights"] = selected
 
             st.markdown("")
+            _f_scores = {s.get("id"): s for s in st.session_state.get("deal_scores", {}).get("flights", [])}
             for i, f in enumerate(flights[:10]):
                 logo_url = f.get("airline_logo", "")
                 dur_str  = fmt_duration(f.get("duration_min"))
@@ -1888,9 +2019,10 @@ if flights or hotels_fmt:
                     st.session_state.get("outbound_date", ""),
                     st.session_state.get("return_date", ""),
                 )
-                logo_html = f'<img class="airline-logo" src="{logo_url}">' if logo_url else "✈"
-                stop_pill = '<span class="pill pill-green">Nonstop</span>' if nonstop else f'<span class="pill pill-warn">{f["stops"]}</span>'
+                logo_html  = f'<img class="airline-logo" src="{logo_url}">' if logo_url else "✈"
+                stop_pill  = '<span class="pill pill-green">Nonstop</span>' if nonstop else f'<span class="pill pill-warn">{f["stops"]}</span>'
                 class_pill = f'<span class="pill pill-blue">{f["class"]}</span>'
+                deal_html  = _deal_badge_html(_f_scores.get(f"F{i+1}", {}))
 
                 st.markdown(f"""
                 <div class="flight-card">
@@ -1921,7 +2053,8 @@ if flights or hotels_fmt:
                       <div class="time-small">{arr_time}</div>
                     </div>
                   </div>
-                  <div class="flight-footer">
+                  <div class="flight-footer" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-top:0.6rem;">
+                    <div>{deal_html}</div>
                     <a class="link-btn" href="{link}" target="_blank">Open in Google Flights →</a>
                   </div>
                 </div>
@@ -1952,6 +2085,7 @@ if flights or hotels_fmt:
             st.session_state["selected_hotels"] = selected
 
             st.markdown("")
+            _h_scores = {s.get("id"): s for s in st.session_state.get("deal_scores", {}).get("hotels", [])}
             for i, h in enumerate(hotels_fmt[:12]):
                 hc = h.get("hotel_class")
                 rs = h.get("review_score", h.get("rating", 0.0))
@@ -1978,6 +2112,7 @@ if flights or hotels_fmt:
                 chips_html = ""
                 if h.get("amenities"):
                     chips_html = '<div style="margin-top:0.6rem;">' + "".join(f'<span class="amenity-chip">{a}</span>' for a in h["amenities"]) + "</div>"
+                deal_html = _deal_badge_html(_h_scores.get(f"H{i+1}", {}))
 
                 st.markdown(f"""
                 <div class="hotel-card">
@@ -1995,7 +2130,8 @@ if flights or hotels_fmt:
                   </div>
                   <div class="hotel-location">📍 {h['area']}{dist_html}</div>
                   {chips_html}
-                  <div style="margin-top:0.75rem;">
+                  <div style="margin-top:0.75rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+                    <div>{deal_html}</div>
                     <a class="link-btn" href="{link}" target="_blank">View hotel listing →</a>
                   </div>
                 </div>
