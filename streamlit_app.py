@@ -369,6 +369,116 @@ header[data-testid="stHeader"] {
   border-bottom: 1px solid var(--border) !important;
 }
 
+/* ---------- date input field ---------- */
+div[data-testid="stDateInput"] input,
+div[data-testid="stDateInput"] input:hover,
+div[data-testid="stDateInput"] input:focus {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text) !important;
+  font-family: 'DM Mono', monospace !important;
+}
+div[data-testid="stDateInput"] > div {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+/* ---------- calendar popup ---------- */
+/* Outer popover shell */
+[data-baseweb="calendar"],
+[data-baseweb="datepicker"],
+[data-baseweb="calendar"] *,
+div[class*="calendarContainer"],
+div[class*="CalendarContainer"] {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  border-color: var(--border2) !important;
+}
+
+/* Calendar wrapper / month container */
+[data-baseweb="calendar"] [role="application"],
+[data-baseweb="calendar"] table,
+[data-baseweb="calendar"] thead,
+[data-baseweb="calendar"] tbody,
+[data-baseweb="calendar"] tr,
+[data-baseweb="calendar"] th,
+[data-baseweb="calendar"] td {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  border: none !important;
+}
+
+/* Day cells */
+[data-baseweb="calendar"] [role="gridcell"] button,
+[data-baseweb="calendar"] [role="gridcell"] div {
+  background: transparent !important;
+  color: var(--text) !important;
+  border-radius: 8px !important;
+}
+[data-baseweb="calendar"] [role="gridcell"] button:hover {
+  background: rgba(250,124,79,0.2) !important;
+  color: var(--text) !important;
+}
+
+/* Selected / today highlight */
+[data-baseweb="calendar"] [aria-selected="true"] button,
+[data-baseweb="calendar"] [aria-selected="true"] div {
+  background: var(--accent) !important;
+  color: #1a1008 !important;
+  border-radius: 8px !important;
+}
+
+/* Month/year header nav buttons */
+[data-baseweb="calendar"] button[aria-label*="previous"],
+[data-baseweb="calendar"] button[aria-label*="next"],
+[data-baseweb="calendar"] button[aria-label*="Previous"],
+[data-baseweb="calendar"] button[aria-label*="Next"] {
+  background: transparent !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: 8px !important;
+}
+[data-baseweb="calendar"] button[aria-label*="previous"]:hover,
+[data-baseweb="calendar"] button[aria-label*="next"]:hover,
+[data-baseweb="calendar"] button[aria-label*="Previous"]:hover,
+[data-baseweb="calendar"] button[aria-label*="Next"]:hover {
+  background: rgba(250,124,79,0.15) !important;
+}
+
+/* Month/year dropdowns inside calendar */
+[data-baseweb="calendar"] select,
+[data-baseweb="calendar"] [data-baseweb="select"] > div {
+  background: var(--surface2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: 8px !important;
+}
+
+/* Weekday header labels (Su Mo Tu ...) */
+[data-baseweb="calendar"] [role="columnheader"] {
+  background: var(--surface2) !important;
+  color: var(--muted) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+}
+
+/* Disabled (out of range) days */
+[data-baseweb="calendar"] [aria-disabled="true"] button {
+  color: rgba(168,137,110,0.35) !important;
+  cursor: not-allowed !important;
+}
+
+/* The floating popover container itself */
+[data-baseweb="popover"][data-placement],
+[data-baseweb="popover"] > div:first-child {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6) !important;
+}
+
 /* ---------- text inputs ---------- */
 div[data-testid="stTextInput"] input,
 div[data-testid="stTextInput"] input:hover {
