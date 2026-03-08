@@ -1811,14 +1811,69 @@ if "nl_mode" not in st.session_state:
     st.session_state["nl_mode"] = False
 
 # ── Mode toggle header ───────────────────────────────────────
-_mode_label  = "✦ AI Search" if not st.session_state["nl_mode"] else "⊞ Manual Form"
-_mode_sub    = "Switch to manual form" if st.session_state["nl_mode"] else "Describe your trip in plain English"
-hdr_l, hdr_r = st.columns([3, 1])
-with hdr_r:
-    if st.button(_mode_label, key="nl_toggle", use_container_width=True):
-        st.session_state["nl_mode"] = not st.session_state["nl_mode"]
-        st.session_state["nl_parsed"] = {}
-        st.rerun()
+# ── Mode pill switch ─────────────────────────────────────────
+_is_nl = st.session_state.get("nl_mode", False)
+
+st.markdown("""
+<style>
+/* pill switch container — targets the two small buttons */
+div.mode-pill-row > div[data-testid="stColumns"] {
+  gap: 2px !important;
+}
+div.mode-pill-row button {
+  border-radius: 99px !important;
+  padding: 0.25rem 1.1rem !important;
+  font-size: 0.74rem !important;
+  font-weight: 600 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  border: 1px solid rgba(255,200,150,0.15) !important;
+  background: rgba(35,21,8,0.9) !important;
+  color: #a8896e !important;
+  letter-spacing: 0.02em !important;
+  transition: all 0.15s !important;
+}
+div.mode-pill-row button:hover {
+  border-color: rgba(250,124,79,0.35) !important;
+  color: var(--text) !important;
+}
+div.mode-pill-row button.active-pill {
+  background: #fa7c4f !important;
+  color: #1a1008 !important;
+  border-color: #fa7c4f !important;
+  box-shadow: 0 2px 10px rgba(250,124,79,0.35) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="mode-pill-row">', unsafe_allow_html=True)
+_pc1, _pc2, _spacer = st.columns([0.55, 0.65, 4])
+sw_manual = _pc1.button("⊞  Manual",     key="sw_manual")
+sw_ai     = _pc2.button("✦  AI Search",  key="sw_ai")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Inject active class via JS after render
+st.markdown(f"""
+<script>
+(function() {{
+  const isNL = {'true' if _is_nl else 'false'};
+  const btns = document.querySelectorAll('div.mode-pill-row button');
+  if (btns.length >= 2) {{
+    btns[0].classList.toggle('active-pill', !isNL);
+    btns[1].classList.toggle('active-pill', isNL);
+  }}
+}})();
+</script>
+""", unsafe_allow_html=True)
+
+if sw_manual and _is_nl:
+    st.session_state["nl_mode"]   = False
+    st.session_state["nl_parsed"] = {}
+    st.rerun()
+if sw_ai and not _is_nl:
+    st.session_state["nl_mode"]   = True
+    st.session_state["nl_parsed"] = {}
+    st.rerun()
 
 # ══════════════════════════════════════════════════════════════
 # MODE A: Natural Language Search
