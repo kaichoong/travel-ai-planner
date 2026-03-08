@@ -439,22 +439,36 @@ def fmt_flights(best_flights, origin, destination, out_date, ret_date):
         })
     return out
 
+def _is_gps(v: str) -> bool:
+    """Return True if string looks like raw GPS coordinates — never show these."""
+    import re as _re
+    return bool(_re.match(r"^-?\d+\.\d+,\s*-?\d+\.\d+$", v.strip()))
+
 def _pick_hotel_area(raw):
     candidates = [
-        raw.get("neighborhood"), raw.get("area"),
-        raw.get("address"), raw.get("location"),
-        raw.get("formatted_address"), raw.get("city"),
+        raw.get("neighborhood"),
+        raw.get("area"),
+        raw.get("gps_coordinates_address"),  # SerpAPI sometimes puts address here
+        raw.get("address"),
+        raw.get("location"),
+        raw.get("formatted_address"),
+        raw.get("city"),
+        raw.get("district"),
+        raw.get("suburb"),
     ]
     for v in candidates:
         v = clean_text(v)
-        if v:
+        if v and not _is_gps(v):
             return v
-    addr = raw.get("address_info") or raw.get("address_details") or {}
-    if isinstance(addr, dict):
-        for k in ["neighborhood", "area", "address", "formatted_address", "city", "region"]:
-            v = clean_text(addr.get(k))
-            if v:
-                return v
+    # Check nested address objects
+    for addr_key in ["address_info", "address_details", "location_info"]:
+        addr = raw.get(addr_key) or {}
+        if isinstance(addr, dict):
+            for k in ["neighborhood", "district", "suburb", "area",
+                       "address", "formatted_address", "city", "region"]:
+                v = clean_text(addr.get(k))
+                if v and not _is_gps(v):
+                    return v
     return ""
 
 def _pick_hotel_amenities(raw):
@@ -465,19 +479,39 @@ def _pick_hotel_amenities(raw):
     v = clean_text(am)
     return [v] if v else []
 
-def fmt_hotels(props, location_query, check_in, check_out):
+def fmt_hotels(props, location_query, check_in, check_out, city_name: str = ""):
+    """
+    city_name: human-readable destination city (e.g. "London") used for
+               the area fallback instead of the raw IATA/query string.
+    """
     out = []
     fallback_link = google_hotels_search_url(location_query, check_in, check_out)
+    # Use city_name for fallback if provided, else location_query
+    fallback_area = f"Near {city_name}" if city_name else f"Near {location_query}"
+
     for h in props[:18]:
         rate = (h.get("rate_per_night", {}) or {}).get("lowest", h.get("price", "N/A"))
         link = h.get("link") or fallback_link
         area = _pick_hotel_area(h)
         if not area:
-            area = f"Near {location_query}"
+            area = fallback_area
+
+        # hotel_class = official star classification (1–5), distinct from review score
+        hotel_class = None
+        raw_class = h.get("hotel_class") or h.get("class") or h.get("star_rating")
+        if raw_class is not None:
+            try:
+                hotel_class = int(float(str(raw_class).replace("★","").strip()))
+                hotel_class = max(1, min(5, hotel_class))  # clamp to 1-5
+            except Exception:
+                hotel_class = None
+
         out.append({
             "name": clean_text(h.get("name", "Unknown")),
             "price": clean_text(rate),
-            "rating": float(h.get("overall_rating", 0.0) or 0.0),
+            "review_score": float(h.get("overall_rating", 0.0) or 0.0),  # 0-10 guest score
+            "hotel_class": hotel_class,                                    # 1-5 luxury stars
+            "rating": float(h.get("overall_rating", 0.0) or 0.0),        # kept for compat
             "reviews_count": clean_text(h.get("reviews") or h.get("reviews_count") or ""),
             "area": area,
             "type": clean_text(h.get("property_type") or h.get("type") or ""),
@@ -1210,7 +1244,8 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
 
     flights_raw, hotels_raw = run_async(fetch_all())
     flights    = sort_flights(fmt_flights(flights_raw, origin, destination, out_d, ret_d), flight_sort)
-    hotels_fmt = sort_hotels(fmt_hotels(hotels_raw, hotel_loc, out_d, ret_d), hotel_sort)
+    _city_name = st.session_state.get("destination_city", "")
+    hotels_fmt = sort_hotels(fmt_hotels(hotels_raw, hotel_loc, out_d, ret_d, _city_name), hotel_sort)
 
     if max_flight_budget > 0:
         flights = [f for f in flights if _parse_price(f.get("price")) <= max_flight_budget]
@@ -1248,7 +1283,8 @@ if not (search_clicked or plan_clicked) and st.session_state.get("flights_raw_ca
     _crd = st.session_state.get("return_date", return_date)
     _cloc = st.session_state.get("hotel_loc", destination)
     _flights_re = sort_flights(fmt_flights(_cached, _co, _cd, _cod, _crd), flight_sort)
-    _hotels_re  = sort_hotels(fmt_hotels(_cached_h, _cloc, _cod, _crd), hotel_sort)
+    _city_nm = st.session_state.get("destination_city", "")
+    _hotels_re  = sort_hotels(fmt_hotels(_cached_h, _cloc, _cod, _crd, _city_nm), hotel_sort)
     if max_flight_budget > 0:
         _flights_re = [f for f in _flights_re if _parse_price(f.get("price")) <= max_flight_budget]
     if max_hotel_budget > 0:
@@ -1662,7 +1698,12 @@ if flights or hotels_fmt:
               <div class="empty-sub">Try lowering the minimum rating, or change the hotel location.</div>
             </div>""", unsafe_allow_html=True)
         else:
-            labels = [f"{i+1}. {h['name']}  ·  {h['price']}  ·  {render_star_rating(h['rating'])}" for i, h in enumerate(hotels_fmt)]
+            def _hotel_label(i, h):
+                hc = h.get("hotel_class")
+                stars = ("★" * hc) if hc else "?"
+                rs = h.get("review_score", h.get("rating", 0))
+                return f"{i+1}. {h['name']}  ·  {h['price']}  ·  {stars} ({rs:.1f}/10)"
+            labels = [_hotel_label(i, h) for i, h in enumerate(hotels_fmt)]
             selected = st.multiselect("Select up to 3 hotels to personalise AI picks", options=labels, default=st.session_state.get("selected_hotels", []))
             selected, clipped = clamp_multiselect(selected, 3)
             if clipped:
@@ -1679,15 +1720,35 @@ if flights or hotels_fmt:
                     with top_r:
                         st.markdown(f'<div class="price-tag" style="text-align:right;">{h["price"]}</div>', unsafe_allow_html=True)
 
-                    # Rating + reviews
-                    full_stars = int(h["rating"] // 2)
-                    half_star  = 1 if (h["rating"] % 2) >= 1 else 0
-                    empty_stars = 5 - full_stars - half_star
-                    stars_html = "★" * full_stars + ("½" if half_star else "") + "☆" * empty_stars
+                    # ── Hotel class (luxury stars) ──────────────────
+                    hc = h.get("hotel_class")
+                    if hc:
+                        class_stars = "★" * hc + "☆" * (5 - hc)
+                        class_html = (
+                            f'<span style="color:#ffb347 !important;letter-spacing:0.05em;">{class_stars}</span>'
+                            f'<span style="font-size:0.72rem;color:#a8896e !important;margin-left:5px;">{hc}-star hotel</span>'
+                        )
+                    else:
+                        class_html = '<span style="font-size:0.72rem;color:#a8896e !important;">Unclassified</span>'
+
+                    # ── Guest review score ───────────────────────────
+                    rs = h.get("review_score", h.get("rating", 0.0))
                     reviews_txt = f" · {h['reviews_count']} reviews" if h.get("reviews_count") else ""
+                    if rs > 0:
+                        score_pct = rs / 10.0  # 0-10 → 0-1
+                        score_color = "#38d96a" if score_pct >= 0.8 else "#ffb347" if score_pct >= 0.6 else "#fa7c4f"
+                        review_html = (
+                            f'<span style="font-size:0.82rem;font-weight:600;color:{score_color} !important;">'
+                            f'{rs:.1f}/10</span>'
+                            f'<span style="font-size:0.78rem;color:#a8896e !important;">{reviews_txt}</span>'
+                        )
+                    else:
+                        review_html = '<span style="font-size:0.78rem;color:#a8896e !important;">No reviews yet</span>'
+
                     st.markdown(
-                        f'<span class="stars">{stars_html}</span>'
-                        f'<span style="font-size:0.82rem;color:#6b7a94;margin-left:4px;">{h["rating"]/2:.1f}/5{reviews_txt}</span>',
+                        f'{class_html}'
+                        f'<span style="color:#a8896e !important;margin:0 6px;">·</span>'
+                        f'{review_html}',
                         unsafe_allow_html=True,
                     )
 
