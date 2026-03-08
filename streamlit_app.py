@@ -1062,9 +1062,96 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 .empty-sub { font-size: 0.83rem; color: var(--muted) !important; }
 
 /* ---------- hero header ---------- */
-.hero { padding: 0.5rem 0 1.8rem; }
-.hero h1 { font-size: 2rem !important; font-weight: 600 !important; letter-spacing: -0.03em; margin-bottom: 0.2rem; }
-.hero-sub { color: var(--muted) !important; font-size: 0.9rem; }
+.hero {
+  padding: 1.8rem 0 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* animated gradient orbs behind the title */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -60px; left: -80px;
+  width: 340px; height: 340px;
+  background: radial-gradient(circle, rgba(250,124,79,0.18) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: orb-drift 8s ease-in-out infinite alternate;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  top: -20px; right: -60px;
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, rgba(255,179,71,0.13) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: orb-drift 11s ease-in-out infinite alternate-reverse;
+}
+@keyframes orb-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(30px, 20px) scale(1.08); }
+}
+
+.hero-inner { position: relative; z-index: 1; }
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(250,124,79,0.12);
+  border: 1px solid rgba(250,124,79,0.30);
+  border-radius: 99px;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fa7c4f !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.9rem;
+}
+
+.hero h1 {
+  font-size: 2.8rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.04em !important;
+  line-height: 1.1 !important;
+  margin-bottom: 0.6rem !important;
+  background: linear-gradient(135deg, #fdf4ec 0%, #ffb347 55%, #fa7c4f 100%);
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+.hero-sub {
+  font-size: 1rem !important;
+  color: #a8896e !important;
+  line-height: 1.6;
+  max-width: 520px;
+  margin-bottom: 1.2rem;
+}
+
+.hero-features {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+.hero-feat {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #a8896e !important;
+  font-weight: 500;
+}
+.hero-feat-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
 
 /* ---------- export ---------- */
 .export-meta {
@@ -1088,8 +1175,21 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 # -------------------------
 st.markdown("""
 <div class="hero">
-  <h1><span style="color:#fa7c4f;">✈</span> AI Travel Planner</h1>
-  <p class="hero-sub">Search flights & hotels · select your picks · let Gemini build your trip</p>
+  <div class="hero-inner">
+    <div class="hero-badge">✦ Powered by Gemini AI</div>
+    <h1>AI Travel Planner</h1>
+    <p class="hero-sub">
+      Find flights & hotels, then let Gemini craft your complete
+      day-by-day itinerary, packing list and local tips — in one click.
+    </p>
+    <div class="hero-features">
+      <div class="hero-feat"><div class="hero-feat-dot"></div>Real-time flight prices</div>
+      <div class="hero-feat"><div class="hero-feat-dot"></div>Live hotel availability</div>
+      <div class="hero-feat"><div class="hero-feat-dot"></div>AI itinerary builder</div>
+      <div class="hero-feat"><div class="hero-feat-dot"></div>Weather & visa info</div>
+      <div class="hero-feat"><div class="hero-feat-dot"></div>Free to use</div>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2175,9 +2275,138 @@ Keep it practical. Flag destination-specific items (e.g. temple dress code, rain
 else:
     # ---- Landing empty state ----
     st.markdown("""
-    <div class="empty-state" style="padding: 5rem 1rem;">
-      <div class="empty-icon">🌍</div>
-      <div class="empty-title" style="font-size:1.1rem;">Where are you going?</div>
-      <div class="empty-sub">Enter your route & dates above — then hit <strong>Search</strong> or <strong>Plan My Entire Trip</strong> for a full AI itinerary in one click.</div>
+    <style>
+    .destinations-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.65rem;
+      margin: 1.5rem 0 2rem;
+    }
+    .dest-card {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      aspect-ratio: 3/2;
+      cursor: default;
+      border: 1px solid rgba(255,200,150,0.10);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .dest-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(250,124,79,0.35);
+    }
+    .dest-bg {
+      width: 100%; height: 100%;
+      background-size: cover;
+      background-position: center;
+      filter: brightness(0.55) saturate(1.1);
+      transition: filter 0.3s;
+    }
+    .dest-card:hover .dest-bg { filter: brightness(0.70) saturate(1.2); }
+    .dest-label {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 0.55rem 0.7rem 0.5rem;
+      background: linear-gradient(transparent, rgba(10,5,2,0.85));
+    }
+    .dest-city {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #fdf4ec !important;
+      line-height: 1.2;
+    }
+    .dest-country {
+      font-size: 0.68rem;
+      color: rgba(253,244,236,0.65) !important;
+    }
+    .dest-emoji {
+      position: absolute;
+      top: 0.5rem; right: 0.6rem;
+      font-size: 1.1rem;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+    }
+    .landing-cta {
+      text-align: center;
+      padding: 0.5rem 0 1.5rem;
+    }
+    .landing-cta-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fdf4ec !important;
+      margin-bottom: 0.4rem;
+    }
+    .landing-cta-sub {
+      font-size: 0.85rem;
+      color: #a8896e !important;
+    }
+    .landing-cta-sub strong { color: #fa7c4f !important; }
+    .landing-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin: 1.2rem 0 1rem;
+      color: #a8896e !important;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .landing-divider::before, .landing-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255,200,150,0.10);
+    }
+    </style>
+
+    <div class="landing-cta">
+      <div class="landing-cta-title">✈ Where are you going?</div>
+      <div class="landing-cta-sub">
+        Enter your route &amp; dates above — hit <strong>Search</strong> or <strong>Plan My Entire Trip</strong> for a full AI itinerary
+      </div>
+    </div>
+
+    <div class="landing-divider">Popular destinations</div>
+
+    <div class="destinations-grid">
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400&q=70');"></div>
+        <div class="dest-emoji">🗼</div>
+        <div class="dest-label"><div class="dest-city">Tokyo</div><div class="dest-country">Japan</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400&q=70');"></div>
+        <div class="dest-emoji">🥐</div>
+        <div class="dest-label"><div class="dest-city">Paris</div><div class="dest-country">France</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1538970272646-f61fabb3a8a2?w=400&q=70');"></div>
+        <div class="dest-emoji">🌴</div>
+        <div class="dest-label"><div class="dest-city">Bali</div><div class="dest-country">Indonesia</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1533929736458-ca588d08c8be?w=400&q=70');"></div>
+        <div class="dest-emoji">🎡</div>
+        <div class="dest-label"><div class="dest-city">London</div><div class="dest-country">United Kingdom</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=400&q=70');"></div>
+        <div class="dest-emoji">🌆</div>
+        <div class="dest-label"><div class="dest-city">Dubai</div><div class="dest-country">UAE</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1534430480872-3498386e7856?w=400&q=70');"></div>
+        <div class="dest-emoji">🦁</div>
+        <div class="dest-label"><div class="dest-city">Phuket</div><div class="dest-country">Thailand</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1555993539-1732b0258235?w=400&q=70');"></div>
+        <div class="dest-emoji">🎰</div>
+        <div class="dest-label"><div class="dest-city">New York</div><div class="dest-country">USA</div></div>
+      </div>
+      <div class="dest-card">
+        <div class="dest-bg" style="background-image:url('https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=400&q=70');"></div>
+        <div class="dest-emoji">🦘</div>
+        <div class="dest-label"><div class="dest-city">Sydney</div><div class="dest-country">Australia</div></div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
