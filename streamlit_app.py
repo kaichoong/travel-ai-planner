@@ -1004,26 +1004,38 @@ div[data-testid="stDateInput"] > div {
 [data-baseweb="calendar"] [role="grid"] *,
 [data-baseweb="datepicker"] *,
 div[data-baseweb="popover"],
-div[data-baseweb="popover"] * {
+div[data-baseweb="popover"] *,
+[data-baseweb="calendar"] div,
+[data-baseweb="calendar"] span {
   background-color: var(--surface2) !important;
   color: var(--text) !important;
 }
 /* Re-apply transparent to day buttons so hover works */
-[data-baseweb="calendar"] [role="gridcell"] button {
+[data-baseweb="calendar"] [role="gridcell"] button,
+[data-baseweb="calendar"] [role="gridcell"] button div,
+[data-baseweb="calendar"] [role="gridcell"] button span {
   background-color: transparent !important;
   color: var(--text) !important;
 }
-[data-baseweb="calendar"] [role="gridcell"] button:hover {
+[data-baseweb="calendar"] [role="gridcell"] button:hover,
+[data-baseweb="calendar"] [role="gridcell"] button:hover div,
+[data-baseweb="calendar"] [role="gridcell"] button:hover span {
   background-color: rgba(250,124,79,0.2) !important;
 }
-[data-baseweb="calendar"] [aria-selected="true"] button {
+[data-baseweb="calendar"] [aria-selected="true"] button,
+[data-baseweb="calendar"] [aria-selected="true"] button div,
+[data-baseweb="calendar"] [aria-selected="true"] button span {
   background-color: var(--accent) !important;
   color: #1a1008 !important;
 }
-/* Empty trailing cells */
+/* Empty trailing cells — catch all */
 [data-baseweb="calendar"] [role="gridcell"]:empty,
-[data-baseweb="calendar"] td:empty {
+[data-baseweb="calendar"] td:empty,
+[data-baseweb="calendar"] [role="grid"] > div:last-child > div:last-child {
   background-color: var(--surface2) !important;
+}
+[data-baseweb="calendar"] [role="gridcell"] > div:empty {
+  background: var(--surface2) !important;
 }
 
 /* ---------- calendar popup ---------- */
@@ -1727,6 +1739,26 @@ div[data-testid="column"] > div { gap: 0 !important; }
 
 </style>
 
+""", unsafe_allow_html=True)
+
+# ── JS: fix calendar inline white bg (base-web applies it inline, can't be overridden by CSS) ──
+st.markdown("""
+<script>
+(function() {
+  const SURFACE = '#2c1c0e';
+  function fixCalendar() {
+    document.querySelectorAll('[data-baseweb="calendar"] *').forEach(el => {
+      const bg = el.style.backgroundColor;
+      if (bg === 'white' || bg === '#ffffff' || bg === 'rgb(255, 255, 255)') {
+        el.style.backgroundColor = SURFACE;
+      }
+    });
+  }
+  const observer = new MutationObserver(fixCalendar);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  fixCalendar();
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # -------------------------
