@@ -1031,16 +1031,36 @@ except Exception:
 
 # Row 1: origin + destination (2 cols) | outbound + return dates (2 cols)
 r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
-origin      = r1c1.text_input("From", value=st.session_state.get("origin", "Singapore"), placeholder="City or airport, e.g. Singapore").strip()
-destination = r1c2.text_input("To", value=st.session_state.get("destination", "Tokyo"), placeholder="City or airport, e.g. Tokyo").strip()
 
-# Show resolved IATA codes as helper hints
-_orig_iata = resolve_to_iata(origin)
-_dest_iata = resolve_to_iata(destination)
-if origin:
-    r1c1.caption(f"→ {_orig_iata}")
-if destination:
-    r1c2.caption(f"→ {_dest_iata}")
+# Resolve city name → IATA live, display IATA in field + city name as confirmation below
+_origin_raw      = r1c1.text_input("From", value=st.session_state.get("origin_city", "Singapore"),
+                       placeholder="City, e.g. Singapore").strip()
+_destination_raw = r1c2.text_input("To",   value=st.session_state.get("destination_city", "Tokyo"),
+                       placeholder="City, e.g. Tokyo").strip()
+
+_orig_iata = resolve_to_iata(_origin_raw)
+_dest_iata = resolve_to_iata(_destination_raw)
+
+# Store city name separately from the IATA code used for API calls
+st.session_state["origin_city"]      = _origin_raw
+st.session_state["destination_city"] = _destination_raw
+
+# Show resolved IATA + city confirmation beneath each field
+if _origin_raw:
+    _orig_known = _orig_iata != _origin_raw.upper()  # True if we resolved it
+    _orig_label = f"✈ {_orig_iata}  ·  {_origin_raw}" if _orig_known else f"✈ {_orig_iata}"
+    _orig_style = "font-size:0.75rem;margin-top:-0.5rem;padding:0.25rem 0.5rem;background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);border-radius:6px;color:#fa7c4f"
+    r1c1.markdown(f'<div style="{_orig_style}">{_orig_label}</div>', unsafe_allow_html=True)
+
+if _destination_raw:
+    _dest_known = _dest_iata != _destination_raw.upper()
+    _dest_label = f"✈ {_dest_iata}  ·  {_destination_raw}" if _dest_known else f"✈ {_dest_iata}"
+    _dest_style = "font-size:0.75rem;margin-top:-0.5rem;padding:0.25rem 0.5rem;background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);border-radius:6px;color:#fa7c4f"
+    r1c2.markdown(f'<div style="{_dest_style}">{_dest_label}</div>', unsafe_allow_html=True)
+
+# These are what get used everywhere downstream
+origin      = _orig_iata
+destination = _dest_iata
 outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
 return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
 
@@ -1356,7 +1376,10 @@ if flights or hotels_fmt:
       margin-bottom: 1rem;
       flex-wrap: wrap;
     ">
-      <span style="font-size:1.05rem;font-weight:600;color:#fa7c4f !important;letter-spacing:-0.01em;">{_o} → {_d}</span>
+      <span style="font-size:1.05rem;font-weight:600;color:#fa7c4f !important;letter-spacing:-0.01em;">
+        {st.session_state.get("origin_city", _o)} → {st.session_state.get("destination_city", _d)}
+        <span style="font-size:0.75rem;font-weight:400;color:#a8896e !important;margin-left:4px;">({_o} → {_d})</span>
+      </span>
       <span style="color:#a8896e !important;font-size:0.85rem;">📅 {_od} → {_rd} &nbsp;·&nbsp; {_nights_str}</span>
       <span style="color:#a8896e !important;font-size:0.85rem;">✈ {_nf} flight{'s' if _nf != 1 else ''} found</span>
       <span style="color:#a8896e !important;font-size:0.85rem;">🏨 {_nh} hotel{'s' if _nh != 1 else ''} found</span>
