@@ -1061,7 +1061,36 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 .empty-title { font-size: 1rem; font-weight: 500; color: var(--muted) !important; margin-bottom: 0.3rem; }
 .empty-sub { font-size: 0.83rem; color: var(--muted) !important; }
 
-/* ---------- hero header ---------- */
+/* ---------- search form wrapper ---------- */
+.search-form {
+  background: rgba(35,21,8,0.6);
+  border: 1px solid rgba(255,200,150,0.10);
+  border-radius: 16px;
+  padding: 1.2rem 1.4rem 0.8rem;
+  margin-bottom: 0.75rem;
+}
+.search-btn-row {
+  margin-bottom: 1rem;
+}
+
+/* tighter label + input gap */
+.stTextInput label,
+.stDateInput label,
+.stSelectbox label {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--muted) !important;
+  margin-bottom: 0.25rem !important;
+}
+/* shrink gap between label and widget */
+[data-testid="stTextInput"],
+[data-testid="stDateInput"],
+[data-testid="stSelectbox"] {
+  gap: 0 !important;
+}
+div[data-testid="column"] > div { gap: 0 !important; }
 .hero {
   padding: 1.8rem 0 2rem;
   position: relative;
@@ -1257,9 +1286,11 @@ try:
 except Exception:
     pass
 
-# Row 1: origin + destination | outbound + return dates
-# On desktop: 4 columns in one row. CSS stacks to 2×2 on mobile.
-r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1, 1])
+# ── Form wrapper ────────────────────────────────────────────
+st.markdown('<div class="search-form">', unsafe_allow_html=True)
+
+# Row 1: From → To
+r1c1, r1c2 = st.columns([1, 1])
 
 _pill_style = ("font-size:0.73rem;padding:0.22rem 0.55rem;"
                "background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);"
@@ -1312,23 +1343,29 @@ def _render_airport_input(col, label, state_key, state_iata_key, default_city, d
 
 origin      = _render_airport_input(r1c1, "From", "origin_city",      "origin_iata",      "Singapore", "SIN")
 destination = _render_airport_input(r1c2, "To",   "destination_city", "destination_iata", "Tokyo",     "NRT")
-outbound_date_obj = r1c3.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
-return_date_obj   = r1c4.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
+
+# Row 2: dates + hotel location
+r2c1, r2c2, r2c3 = st.columns([1, 1, 1])
+outbound_date_obj = r2c1.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
+return_date_obj   = r2c2.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
+location = r2c3.text_input(
+    "Hotel location",
+    value=st.session_state.get("location", ""),
+    placeholder="Optional — defaults to destination"
+).strip()
 
 outbound_date = outbound_date_obj.strftime("%Y-%m-%d")
 return_date   = return_date_obj.strftime("%Y-%m-%d")
 
-# Row 2: hotel location
-location = st.text_input(
-    "Hotel location (optional — defaults to destination)",
-    value=st.session_state.get("location", ""),
-    placeholder="e.g. Tokyo, Shinjuku"
-).strip()
+st.markdown('</div>', unsafe_allow_html=True)
 
+# Buttons
+st.markdown('<div class="search-btn-row">', unsafe_allow_html=True)
 col_s1, col_s2, col_s3 = st.columns([1.1, 1.1, 0.8])
 search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
 plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
 surprise_clicked = col_s3.button("🎲  Surprise Me!", use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Search
