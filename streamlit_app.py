@@ -1394,9 +1394,55 @@ location = st.text_input(
     placeholder="e.g. Tokyo, Shinjuku"
 ).strip()
 
+# ── Action buttons with JS click bridge for reliable styling ──────────────
+_btn_css = """
+<style>
+/* Hide the real Streamlit buttons visually but keep them functional */
+div[data-testid="stHorizontalBlock"]:has(#search-btn-anchor) .stButton button {
+  opacity: 0 !important;
+  position: absolute !important;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: pointer !important;
+  z-index: 10 !important;
+}
+div[data-testid="stHorizontalBlock"]:has(#search-btn-anchor) .stButton {
+  position: relative !important;
+}
+/* Style the visual layer underneath */
+.action-btn-row { display: flex; gap: 0.5rem; width: 100%; margin-bottom: 0.25rem; }
+.action-btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.4rem;
+  padding: 0.62rem 0.5rem;
+  border-radius: 9px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  pointer-events: none;  /* real button on top handles clicks */
+  white-space: nowrap;
+}
+.action-btn-search  { background: #fa7c4f; color: #1a1008; border: none; }
+.action-btn-plan    { background: transparent; color: #ffb347; border: 1.5px solid #ffb347; }
+.action-btn-surp    { background: transparent; color: #a8896e; border: 1.5px solid rgba(255,200,150,0.3); }
+@media (max-width: 768px) {
+  .action-btn { font-size: 0.82rem; padding: 0.55rem 0.3rem; }
+}
+</style>
+<div id="search-btn-anchor"></div>
+<div class="action-btn-row">
+  <div class="action-btn action-btn-search">🔍 Search</div>
+  <div class="action-btn action-btn-plan">✨ Plan Trip</div>
+  <div class="action-btn action-btn-surp">🎲 Surprise Me!</div>
+</div>
+"""
+st.markdown(_btn_css, unsafe_allow_html=True)
+
 col_s1, col_s2, col_s3 = st.columns([1, 1, 1])
-search_clicked   = col_s1.button("🔍 Search", type="primary", use_container_width=True, help="Search Flights & Hotels")
-plan_clicked     = col_s2.button("✨ Plan Trip", type="secondary", use_container_width=True, help="Search + build full AI itinerary")
+search_clicked   = col_s1.button("🔍 Search",      use_container_width=True, help="Search Flights & Hotels")
+plan_clicked     = col_s2.button("✨ Plan Trip",    use_container_width=True, help="Search + build full AI itinerary")
 surprise_clicked = col_s3.button("🎲 Surprise Me!", use_container_width=True, help="Let AI pick your destination")
 
 # -------------------------
