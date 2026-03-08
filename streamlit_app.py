@@ -1077,6 +1077,133 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 }
 .export-meta span { color: var(--muted) !important; }
 .export-meta strong { color: var(--text) !important; }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 768px)
+   Streamlit renders columns as flex children inside
+   [data-testid="stHorizontalBlock"] — we stack them on mobile.
+═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Global spacing ── */
+  .block-container {
+    padding-top: 1rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    max-width: 100% !important;
+  }
+
+  /* ── Stack ALL columns vertically ── */
+  [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+  }
+  [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* ── Except 2-col splits that look fine side-by-side (price+name, area+dist) ── */
+  [data-testid="stHorizontalBlock"].keep-row > [data-testid="stColumn"] {
+    flex: 1 1 48% !important;
+    width: 48% !important;
+  }
+
+  /* ── Hero ── */
+  .hero { padding: 0.3rem 0 1rem; }
+  .hero h1 { font-size: 1.5rem !important; }
+  .hero-sub { font-size: 0.82rem; }
+
+  /* ── Buttons: stack Search + Plan, keep Surprise inline with Plan ── */
+  [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] button) {
+    gap: 0.4rem !important;
+  }
+
+  /* ── Tab bar: allow horizontal scroll, don't wrap ── */
+  [data-testid="stTabs"] [role="tablist"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  [data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar { display: none; }
+  [data-testid="stTabs"] [role="tab"] {
+    font-size: 0.78rem !important;
+    padding: 0.5rem 0.6rem !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* ── Flight cards ── */
+  .flight-card { padding: 0.75rem 0.85rem !important; }
+  .iata { font-size: 1.2rem !important; }
+  .price-tag { font-size: 1rem !important; }
+
+  /* ── Hotel cards ── */
+  .hotel-name { font-size: 0.95rem !important; }
+
+  /* ── Price calendar: 4 cols instead of 7 ── */
+  /* We handle this in Python below */
+
+  /* ── Weather: allow horizontal scroll ── */
+  .wx-scroll-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem;
+  }
+  .wx-scroll-wrap > div {
+    display: flex !important;
+    gap: 0.4rem !important;
+    min-width: max-content !important;
+  }
+
+  /* ── Trip summary bar ── */
+  [data-testid="stAlert"],
+  div[style*="border-left"] {
+    font-size: 0.82rem !important;
+    padding: 0.55rem 0.8rem !important;
+  }
+
+  /* ── Sidebar toggle hint ── */
+  [data-testid="stSidebarCollapsedControl"] {
+    top: 0.6rem !important;
+  }
+
+  /* ── Inputs ── */
+  [data-testid="stTextInput"] input,
+  [data-testid="stDateInput"] input {
+    font-size: 1rem !important;  /* prevent iOS auto-zoom on focus */
+  }
+
+  /* ── Multiselect ── */
+  [data-baseweb="tag"] span { font-size: 0.72rem !important; }
+
+  /* ── Number inputs ── */
+  div[data-testid="stNumberInput"] input { font-size: 1rem !important; }
+
+  /* ── Action buttons: full width each ── */
+  [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:nth-of-type(3)
+    > [data-testid="stColumn"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+}
+
+/* ── Slightly looser on small tablets (769–1024) ── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .block-container {
+    padding-left: 1.2rem !important;
+    padding-right: 1.2rem !important;
+  }
+  [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    flex: 1 1 48% !important;
+    min-width: 0 !important;
+  }
+  [data-testid="stTabs"] [role="tab"] {
+    font-size: 0.82rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1154,8 +1281,9 @@ try:
 except Exception:
     pass
 
-# Row 1: origin + destination (2 cols) | outbound + return dates (2 cols)
-r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1.2, 1.2])
+# Row 1: origin + destination | outbound + return dates
+# On desktop: 4 columns in one row. CSS stacks to 2×2 on mobile.
+r1c1, r1c2, r1c3, r1c4 = st.columns([1, 1, 1, 1])
 
 _pill_style = ("font-size:0.73rem;padding:0.22rem 0.55rem;"
                "background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);"
@@ -1221,10 +1349,10 @@ location = st.text_input(
     placeholder="e.g. Tokyo, Shinjuku"
 ).strip()
 
-col_s1, col_s2, col_s3 = st.columns([1.1, 1.1, 0.8])
-search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
-plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
-surprise_clicked = col_s3.button("🎲  Surprise Me!", use_container_width=True)
+col_s1, col_s2, col_s3 = st.columns([1, 1, 1])
+search_clicked   = col_s1.button("🔍 Search", type="primary", use_container_width=True, help="Search Flights & Hotels")
+plan_clicked     = col_s2.button("✨ Plan Trip", type="secondary", use_container_width=True, help="Search + build full AI itinerary")
+surprise_clicked = col_s3.button("🎲 Surprise Me!", use_container_width=True, help="Let AI pick your destination")
 
 # -------------------------
 # Search
@@ -1595,7 +1723,7 @@ if flights or hotels_fmt:
                     _max_p  = max(_prices) if _prices else 1
                     _range  = max(_max_p - _min_p, 1)
 
-                    _cal_cols = st.columns(min(len(_cal), 7))
+                    _cal_cols = st.columns(min(len(_cal), 4))
                     for _ci, (_dt, _pr) in enumerate(sorted(_cal.items())):
                         _col_i = _ci % 7
                         with _cal_cols[_col_i]:
@@ -1881,6 +2009,7 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
 
         if wx and wx.get("daily"):
             st.markdown(f"#### 🌤 Weather in {wx.get('city', dest2)} during your trip")
+            st.markdown('<div class="wx-scroll-wrap">', unsafe_allow_html=True)
             wx_cols = st.columns(min(len(wx["daily"]), 7))
             for ci, day in enumerate(wx["daily"][:7]):
                 with wx_cols[ci]:
