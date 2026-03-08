@@ -1814,66 +1814,96 @@ if "nl_mode" not in st.session_state:
 # ── Mode pill switch ─────────────────────────────────────────
 _is_nl = st.session_state.get("nl_mode", False)
 
+# ── Mode toggle cards ────────────────────────────────────────
+_is_nl = st.session_state.get("nl_mode", False)
+
 st.markdown("""
 <style>
-/* pill switch container — targets the two small buttons */
-div.mode-pill-row > div[data-testid="stColumns"] {
-  gap: 2px !important;
-}
-div.mode-pill-row button {
-  border-radius: 99px !important;
-  padding: 0.25rem 1.1rem !important;
-  font-size: 0.74rem !important;
-  font-weight: 600 !important;
+div.mode-card-row > div[data-testid="stColumns"] { gap: 0.65rem !important; }
+div.mode-card-row button {
+  width: 100% !important;
   height: auto !important;
   min-height: 0 !important;
-  border: 1px solid rgba(255,200,150,0.15) !important;
-  background: rgba(35,21,8,0.9) !important;
-  color: #a8896e !important;
-  letter-spacing: 0.02em !important;
-  transition: all 0.15s !important;
+  background: rgba(35,21,8,0.7) !important;
+  border: 1px solid rgba(255,200,150,0.12) !important;
+  border-radius: 14px !important;
+  padding: 0 !important;
+  text-align: left !important;
+  transition: border-color 0.18s, box-shadow 0.18s !important;
+  white-space: normal !important;
+  line-height: 1.4 !important;
 }
-div.mode-pill-row button:hover {
-  border-color: rgba(250,124,79,0.35) !important;
-  color: var(--text) !important;
+div.mode-card-row button:hover {
+  border-color: rgba(250,124,79,0.4) !important;
+  box-shadow: 0 4px 20px rgba(250,124,79,0.08) !important;
 }
-div.mode-pill-row button.active-pill {
-  background: #fa7c4f !important;
-  color: #1a1008 !important;
-  border-color: #fa7c4f !important;
-  box-shadow: 0 2px 10px rgba(250,124,79,0.35) !important;
-}
+div.mode-card-row button p { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="mode-pill-row">', unsafe_allow_html=True)
-_pc1, _pc2, _spacer = st.columns([0.55, 0.65, 4])
-sw_manual = _pc1.button("⊞  Manual",     key="sw_manual")
-sw_ai     = _pc2.button("✦  AI Search",  key="sw_ai")
-st.markdown('</div>', unsafe_allow_html=True)
+_manual_active = "border-color:rgba(250,124,79,0.6) !important;box-shadow:0 0 0 1px rgba(250,124,79,0.3),0 4px 20px rgba(250,124,79,0.12) !important;"
+_ai_active     = "border-color:rgba(255,179,71,0.6) !important;box-shadow:0 0 0 1px rgba(255,179,71,0.3),0 4px 20px rgba(255,179,71,0.10) !important;"
 
-# Inject active class via JS after render
 st.markdown(f"""
-<script>
-(function() {{
-  const isNL = {'true' if _is_nl else 'false'};
-  const btns = document.querySelectorAll('div.mode-pill-row button');
-  if (btns.length >= 2) {{
-    btns[0].classList.toggle('active-pill', !isNL);
-    btns[1].classList.toggle('active-pill', isNL);
-  }}
-}})();
-</script>
+<style>
+/* Active card highlights via attribute hack */
+div.mode-card-row div[data-testid="column"]:first-child button {{
+  {'border-color:rgba(250,124,79,0.55) !important;box-shadow:0 0 0 1.5px rgba(250,124,79,0.25),0 4px 20px rgba(250,124,79,0.10) !important;' if not _is_nl else ''}
+}}
+div.mode-card-row div[data-testid="column"]:last-child button {{
+  {'border-color:rgba(255,179,71,0.55) !important;box-shadow:0 0 0 1.5px rgba(255,179,71,0.25),0 4px 20px rgba(255,179,71,0.10) !important;' if _is_nl else ''}
+}}
+</style>
 """, unsafe_allow_html=True)
 
-if sw_manual and _is_nl:
-    st.session_state["nl_mode"]   = False
-    st.session_state["nl_parsed"] = {}
-    st.rerun()
-if sw_ai and not _is_nl:
-    st.session_state["nl_mode"]   = True
-    st.session_state["nl_parsed"] = {}
-    st.rerun()
+st.markdown('<div class="mode-card-row">', unsafe_allow_html=True)
+_mc1, _mc2 = st.columns(2)
+
+with _mc1:
+    st.markdown(f"""
+    <div style="pointer-events:none;padding:1rem 1.2rem 0.9rem;position:relative;">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+        <div style="width:28px;height:28px;border-radius:8px;
+          background:{'rgba(250,124,79,0.2)' if not _is_nl else 'rgba(255,255,255,0.04)'};
+          border:1px solid {'rgba(250,124,79,0.4)' if not _is_nl else 'rgba(255,200,150,0.12)'};
+          display:flex;align-items:center;justify-content:center;font-size:0.85rem;">⊞</div>
+        <div style="font-size:0.85rem;font-weight:700;color:{'#fa7c4f' if not _is_nl else '#a8896e'} !important;">Manual Form</div>
+        {'<div style="margin-left:auto;font-size:0.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;background:rgba(250,124,79,0.15);border:1px solid rgba(250,124,79,0.3);border-radius:99px;padding:0.1rem 0.5rem;color:#fa7c4f !important;">Active</div>' if not _is_nl else ''}
+      </div>
+      <div style="font-size:0.78rem;color:#a8896e !important;line-height:1.5;">
+        Pick your cities, dates & preferences yourself. Best when you know exactly where you want to go.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if _mc1.button("manual_btn", key="sw_manual", use_container_width=True, label_visibility="hidden"):
+        if _is_nl:
+            st.session_state["nl_mode"]   = False
+            st.session_state["nl_parsed"] = {}
+            st.rerun()
+
+with _mc2:
+    st.markdown(f"""
+    <div style="pointer-events:none;padding:1rem 1.2rem 0.9rem;position:relative;">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+        <div style="width:28px;height:28px;border-radius:8px;
+          background:{'rgba(255,179,71,0.2)' if _is_nl else 'rgba(255,255,255,0.04)'};
+          border:1px solid {'rgba(255,179,71,0.4)' if _is_nl else 'rgba(255,200,150,0.12)'};
+          display:flex;align-items:center;justify-content:center;font-size:0.85rem;">✦</div>
+        <div style="font-size:0.85rem;font-weight:700;color:{'#ffb347' if _is_nl else '#a8896e'} !important;">AI Search</div>
+        {'<div style="margin-left:auto;font-size:0.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;background:rgba(255,179,71,0.15);border:1px solid rgba(255,179,71,0.3);border-radius:99px;padding:0.1rem 0.5rem;color:#ffb347 !important;">Active</div>' if _is_nl else ''}
+      </div>
+      <div style="font-size:0.78rem;color:#a8896e !important;line-height:1.5;">
+        Just describe your dream trip in plain English — Gemini figures out the rest. Great for when you're still exploring.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if _mc2.button("ai_btn", key="sw_ai", use_container_width=True, label_visibility="hidden"):
+        if not _is_nl:
+            st.session_state["nl_mode"]   = True
+            st.session_state["nl_parsed"] = {}
+            st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════
 # MODE A: Natural Language Search
