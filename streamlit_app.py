@@ -1916,9 +1916,9 @@ if flights or hotels_fmt:
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "✈  Flights", "🏨  Hotels", "✦  AI Picks",
-        "🗺  Itinerary", "🌍  Destination", "🎒  Essentials"
+        "🗺  Itinerary", "🌍  Destination", "🎒  Essentials", "💬  Chat"
     ])
 
     # ==============================
@@ -2549,6 +2549,228 @@ Keep it practical. Flag destination-specific items (e.g. temple dress code, rain
             f'text-decoration:none;">✉️ Share via Email</a>',
             unsafe_allow_html=True,
         )
+
+    # ==============================
+    # TAB 7 — AI Chat
+    # ==============================
+    with tab7:
+        _oc  = st.session_state.get("origin_city",      st.session_state.get("origin", ""))
+        _dc  = st.session_state.get("destination_city", st.session_state.get("destination", ""))
+        _od  = st.session_state.get("outbound_date", "")
+        _rd  = st.session_state.get("return_date", "")
+        _sty = style
+
+        # Build trip context snapshot for the system prompt
+        _sel_f  = "\n".join(st.session_state.get("selected_flights", [])) or "None selected"
+        _sel_h  = "\n".join(st.session_state.get("selected_hotels",  [])) or "None selected"
+        _itin   = st.session_state.get("itinerary_md", "") or "Not generated yet"
+        _tips   = st.session_state.get("tips_md",      "") or "Not generated yet"
+        _n_chat = len(flights)
+        _h_chat = len(hotels_fmt)
+
+        _system_ctx = f"""You are a knowledgeable, friendly AI travel assistant embedded in a trip planning app.
+
+CURRENT TRIP CONTEXT:
+- Route: {_oc} → {_dc}
+- Dates: {_od} to {_rd}
+- Trip style: {_sty}
+- Flights found: {_n_chat} | Hotels found: {_h_chat}
+- Max stops: {max_stops} | Min hotel rating: {min_hotel_rating}★ | Currency: {currency}
+
+SELECTED FLIGHTS:
+{_sel_f}
+
+SELECTED HOTELS:
+{_sel_h}
+
+ITINERARY (if generated):
+{_itin[:1500] if len(_itin) > 1500 else _itin}
+
+TRAVEL TIPS (if generated):
+{_tips[:800] if len(_tips) > 800 else _tips}
+
+You have full context of this trip. Answer questions about flights, hotels, the destination, local tips, visa, weather, food, transport, budget, packing — anything travel-related. Be concise, specific and helpful. Use bullet points for lists. If asked something outside travel, politely redirect."""
+
+        # Init chat history
+        if "chat_history" not in st.session_state:
+            st.session_state["chat_history"] = []
+
+        # ── Chat CSS ──────────────────────────────────────────
+        st.markdown("""
+        <style>
+        .chat-wrap {
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        .chat-header {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          margin-bottom: 1.2rem;
+          padding-bottom: 0.8rem;
+          border-bottom: 1px solid rgba(255,200,150,0.08);
+        }
+        .chat-header-icon {
+          width: 36px; height: 36px;
+          background: linear-gradient(135deg, rgba(250,124,79,0.2), rgba(255,179,71,0.15));
+          border: 1px solid rgba(250,124,79,0.3);
+          border-radius: 10px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 1.1rem;
+          flex-shrink: 0;
+        }
+        .chat-header-text { line-height: 1.3; }
+        .chat-header-title { font-size: 0.95rem; font-weight: 700; color: var(--text) !important; }
+        .chat-header-sub   { font-size: 0.75rem; color: var(--muted) !important; }
+
+        .chat-msg {
+          display: flex;
+          gap: 0.7rem;
+          margin-bottom: 1rem;
+          align-items: flex-start;
+        }
+        .chat-msg.user  { flex-direction: row-reverse; }
+        .chat-avatar {
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.85rem;
+          flex-shrink: 0;
+        }
+        .chat-avatar.ai   { background: rgba(250,124,79,0.15); border: 1px solid rgba(250,124,79,0.25); }
+        .chat-avatar.user { background: rgba(255,179,71,0.12); border: 1px solid rgba(255,179,71,0.22); }
+        .chat-bubble {
+          max-width: 82%;
+          padding: 0.65rem 0.9rem;
+          border-radius: 12px;
+          font-size: 0.88rem;
+          line-height: 1.6;
+        }
+        .chat-bubble.ai {
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,200,150,0.10);
+          border-top-left-radius: 3px;
+          color: var(--text) !important;
+        }
+        .chat-bubble.user {
+          background: rgba(250,124,79,0.12);
+          border: 1px solid rgba(250,124,79,0.22);
+          border-top-right-radius: 3px;
+          color: var(--text) !important;
+        }
+        .chat-suggestions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.45rem;
+          margin-bottom: 1rem;
+        }
+        .chat-suggestion-chip {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,200,150,0.13);
+          border-radius: 99px;
+          padding: 0.3rem 0.75rem;
+          font-size: 0.76rem;
+          color: var(--muted) !important;
+          cursor: pointer;
+          transition: border-color 0.15s, color 0.15s;
+          white-space: nowrap;
+        }
+        .chat-suggestion-chip:hover {
+          border-color: rgba(250,124,79,0.35);
+          color: var(--accent) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="chat-wrap">
+          <div class="chat-header">
+            <div class="chat-header-icon">✦</div>
+            <div class="chat-header-text">
+              <div class="chat-header-title">Ask anything about your trip</div>
+              <div class="chat-header-sub">{_oc} → {_dc} · {_od} to {_rd} · Full trip context loaded</div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Suggested prompts ────────────────────────────────
+        suggestions = [
+            f"Best areas to stay in {_dc}?",
+            "Is this a good time to visit?",
+            "What should I pack?",
+            "How do I get around locally?",
+            "Any visa requirements?",
+            "Best local food to try?",
+            "Estimated daily budget?",
+            "Top things to avoid?",
+        ]
+        sugg_cols = st.columns(4)
+        for si, sugg in enumerate(suggestions):
+            if sugg_cols[si % 4].button(sugg, key=f"sugg_{si}", use_container_width=True):
+                st.session_state["chat_history"].append({"role": "user", "content": sugg})
+                st.session_state["chat_pending"] = True
+                st.rerun()
+
+        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
+        # ── Render chat history ──────────────────────────────
+        for msg in st.session_state["chat_history"]:
+            role    = msg["role"]
+            content = msg["content"]
+            if role == "user":
+                st.markdown(f"""
+                <div class="chat-msg user">
+                  <div class="chat-avatar user">👤</div>
+                  <div class="chat-bubble user">{content}</div>
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="chat-msg ai">
+                  <div class="chat-avatar ai">✦</div>
+                  <div class="chat-bubble ai">{content}</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ── Handle pending AI response ───────────────────────
+        if st.session_state.get("chat_pending"):
+            st.session_state["chat_pending"] = False
+            history  = st.session_state["chat_history"]
+            last_msg = history[-1]["content"] if history else ""
+
+            # Build messages array: system context + full history
+            gemini_prompt = f"{_system_ctx}\n\n--- CONVERSATION ---\n"
+            for m in history[:-1]:
+                role_label = "User" if m["role"] == "user" else "Assistant"
+                gemini_prompt += f"{role_label}: {m['content']}\n"
+            gemini_prompt += f"User: {last_msg}\nAssistant:"
+
+            with st.spinner("✦ Thinking..."):
+                reply = run_async(gemini_call(client, GEMINI_MODEL, gemini_prompt))
+
+            st.session_state["chat_history"].append({"role": "assistant", "content": reply})
+            st.rerun()
+
+        # ── Input box ────────────────────────────────────────
+        st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
+        _col_input, _col_send = st.columns([5, 1])
+        user_input = _col_input.text_input(
+            "Ask anything",
+            placeholder=f"e.g. What's the weather like in {_dc} in April?",
+            label_visibility="collapsed",
+            key="chat_input"
+        )
+        send_clicked = _col_send.button("Send →", type="primary", use_container_width=True)
+
+        if send_clicked and user_input.strip():
+            st.session_state["chat_history"].append({"role": "user", "content": user_input.strip()})
+            st.session_state["chat_pending"] = True
+            st.rerun()
+
+        # Clear chat button
+        if st.session_state.get("chat_history"):
+            if st.button("🗑 Clear chat", key="clear_chat"):
+                st.session_state["chat_history"] = []
+                st.rerun()
 
 else:
     # ---- Landing empty state ----
