@@ -1746,127 +1746,134 @@ try:
 except Exception:
     pass
 
-# ── Natural language search toggle ──────────────────────────
-if "nl_mode" not in st.session_state:
-    st.session_state["nl_mode"] = False
+# ── Form wrapper ──────────────────────────────────────────
+st.markdown('<div class="search-form">', unsafe_allow_html=True)
 
-# ── Mode toggle header ───────────────────────────────────────
-# ── Mode pill switch ─────────────────────────────────────────
-_is_nl = st.session_state.get("nl_mode", False)
+# Row 1: From → To
+r1c1, r1c2 = st.columns([1, 1])
 
-# ── Mode toggle cards ────────────────────────────────────────
-_is_nl = st.session_state.get("nl_mode", False)
+_pill_style = ("font-size:0.73rem;padding:0.22rem 0.55rem;"
+               "background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);"
+               "border-radius:6px;color:#fa7c4f;display:inline-block;margin-top:2px;")
 
-st.markdown("""
-<style>
-div.mode-card-row > div[data-testid="stColumns"] { gap: 0.65rem !important; }
-div.mode-card-row button {
-  width: 100% !important;
-  height: auto !important;
-  min-height: 0 !important;
-  background: rgba(35,21,8,0.7) !important;
-  border: 1px solid rgba(255,200,150,0.12) !important;
-  border-radius: 14px !important;
-  padding: 0 !important;
-  text-align: left !important;
-  transition: border-color 0.18s, box-shadow 0.18s !important;
-  white-space: normal !important;
-  line-height: 1.4 !important;
-}
-div.mode-card-row button:hover {
-  border-color: rgba(250,124,79,0.4) !important;
-  box-shadow: 0 4px 20px rgba(250,124,79,0.08) !important;
-}
-div.mode-card-row button p { display: none !important; }
-div.mode-card-row button { color: transparent !important; font-size: 0 !important; }
-</style>
-""", unsafe_allow_html=True)
+def _render_airport_input(col, label, state_key, state_iata_key, default_city, default_iata):
+    """
+    Renders a city text input. If the city has multiple airports, shows a
+    compact selectbox to pick one. Returns the final resolved IATA code.
+    """
+    raw = col.text_input(label, value=st.session_state.get(state_key, default_city),
+                         placeholder="City, e.g. Bangkok").strip()
+    st.session_state[state_key] = raw
 
-_manual_active = "border-color:rgba(250,124,79,0.6) !important;box-shadow:0 0 0 1px rgba(250,124,79,0.3),0 4px 20px rgba(250,124,79,0.12) !important;"
-_ai_active     = "border-color:rgba(255,179,71,0.6) !important;box-shadow:0 0 0 1px rgba(255,179,71,0.3),0 4px 20px rgba(255,179,71,0.10) !important;"
+    options = get_airport_options(raw)
 
-st.markdown(f"""
-<style>
-/* Active card highlights via attribute hack */
-div.mode-card-row div[data-testid="column"]:first-child button {{
-  {'border-color:rgba(250,124,79,0.55) !important;box-shadow:0 0 0 1.5px rgba(250,124,79,0.25),0 4px 20px rgba(250,124,79,0.10) !important;' if not _is_nl else ''}
-}}
-div.mode-card-row div[data-testid="column"]:last-child button {{
-  {'border-color:rgba(255,179,71,0.55) !important;box-shadow:0 0 0 1.5px rgba(255,179,71,0.25),0 4px 20px rgba(255,179,71,0.10) !important;' if _is_nl else ''}
-}}
-</style>
-""", unsafe_allow_html=True)
+    if options:
+        opt_labels = [lbl for _, lbl in options]
+        opt_iatas  = [iata for iata, _ in options]
+        prev_iata  = st.session_state.get(state_iata_key, opt_iatas[0])
+        prev_idx   = opt_iatas.index(prev_iata) if prev_iata in opt_iatas else 0
+        chosen_label = col.selectbox(
+            f"Airport for {raw}",
+            options=opt_labels,
+            index=prev_idx,
+            key=f"airport_sel_{state_key}",
+            label_visibility="collapsed",
+        )
+        chosen_iata = opt_iatas[opt_labels.index(chosen_label)]
+        st.session_state[state_iata_key] = chosen_iata
+        col.markdown(
+            f'<div style="{_pill_style}">✈ {chosen_iata}  ·  {raw}</div>',
+            unsafe_allow_html=True,
+        )
+        return chosen_iata
+    else:
+        iata = resolve_to_iata(raw) if raw else default_iata
+        st.session_state[state_iata_key] = iata
+        if raw:
+            resolved  = iata != raw.upper()
+            pill_text = f"✈ {iata}  ·  {raw}" if resolved else f"✈ {iata}"
+            col.markdown(
+                f'<div style="{_pill_style}">{pill_text}</div>',
+                unsafe_allow_html=True,
+            )
+        return iata
 
-st.markdown('<div class="mode-card-row">', unsafe_allow_html=True)
-_mc1, _mc2 = st.columns(2)
+origin      = _render_airport_input(r1c1, "From", "origin_city",      "origin_iata",      "Singapore", "SIN")
+destination = _render_airport_input(r1c2, "To",   "destination_city", "destination_iata", "Tokyo",     "NRT")
 
-with _mc1:
-    st.markdown(f"""
-    <div style="pointer-events:none;padding:1rem 1.2rem 0.9rem;position:relative;">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-        <div style="width:28px;height:28px;border-radius:8px;
-          background:{'rgba(250,124,79,0.2)' if not _is_nl else 'rgba(255,255,255,0.04)'};
-          border:1px solid {'rgba(250,124,79,0.4)' if not _is_nl else 'rgba(255,200,150,0.12)'};
-          display:flex;align-items:center;justify-content:center;font-size:0.85rem;">⊞</div>
-        <div style="font-size:0.85rem;font-weight:700;color:{'#fa7c4f' if not _is_nl else '#a8896e'} !important;">Manual Form</div>
-        {'<div style="margin-left:auto;font-size:0.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;background:rgba(250,124,79,0.15);border:1px solid rgba(250,124,79,0.3);border-radius:99px;padding:0.1rem 0.5rem;color:#fa7c4f !important;">Active</div>' if not _is_nl else ''}
-      </div>
-      <div style="font-size:0.78rem;color:#a8896e !important;line-height:1.5;">
-        Pick your cities, dates & preferences yourself. Best when you know exactly where you want to go.
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if _mc1.button("⊞ Manual Form", key="sw_manual", use_container_width=True):
-        if _is_nl:
-            st.session_state["nl_mode"]   = False
-            st.session_state["nl_parsed"] = {}
-            st.rerun()
+# Row 2: dates + hotel location
+r2c1, r2c2, r2c3 = st.columns([1, 1, 1])
+outbound_date_obj = r2c1.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
+return_date_obj   = r2c2.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
+location = r2c3.text_input(
+    "Hotel location",
+    value=st.session_state.get("location", ""),
+    placeholder="Optional — defaults to destination"
+).strip()
 
-with _mc2:
-    st.markdown(f"""
-    <div style="pointer-events:none;padding:1rem 1.2rem 0.9rem;position:relative;">
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-        <div style="width:28px;height:28px;border-radius:8px;
-          background:{'rgba(255,179,71,0.2)' if _is_nl else 'rgba(255,255,255,0.04)'};
-          border:1px solid {'rgba(255,179,71,0.4)' if _is_nl else 'rgba(255,200,150,0.12)'};
-          display:flex;align-items:center;justify-content:center;font-size:0.85rem;">✦</div>
-        <div style="font-size:0.85rem;font-weight:700;color:{'#ffb347' if _is_nl else '#a8896e'} !important;">AI Search</div>
-        {'<div style="margin-left:auto;font-size:0.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;background:rgba(255,179,71,0.15);border:1px solid rgba(255,179,71,0.3);border-radius:99px;padding:0.1rem 0.5rem;color:#ffb347 !important;">Active</div>' if _is_nl else ''}
-      </div>
-      <div style="font-size:0.78rem;color:#a8896e !important;line-height:1.5;">
-        Just describe your dream trip in plain English — Gemini figures out the rest. Great for when you're still exploring.
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if _mc2.button("✦ AI Search", key="sw_ai", use_container_width=True):
-        if not _is_nl:
-            st.session_state["nl_mode"]   = True
-            st.session_state["nl_parsed"] = {}
-            st.rerun()
+outbound_date = outbound_date_obj.strftime("%Y-%m-%d")
+return_date   = return_date_obj.strftime("%Y-%m-%d")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-# MODE A: Natural Language Search
-# ══════════════════════════════════════════════════════════════
-if st.session_state.get("nl_mode"):
+# ── Action buttons ───────────────────────────────────────────
+st.markdown('<div class="search-btn-row">', unsafe_allow_html=True)
+col_s1, col_s2, col_s3 = st.columns([1.1, 1.1, 0.8])
+search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
+plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
+inspire_clicked  = col_s3.button("✦  Inspire Me", use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Inspire Me — expandable NL panel ────────────────────────
+st.markdown("""
+<style>
+.inspire-panel {
+  background: rgba(28,16,6,0.9);
+  border: 1px solid rgba(255,179,71,0.18);
+  border-radius: 14px;
+  padding: 1.1rem 1.3rem 1rem;
+  margin-top: 0.5rem;
+}
+.inspire-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffb347 !important;
+  margin-bottom: 0.35rem;
+}
+.inspire-hint {
+  font-size: 0.75rem;
+  color: #a8896e !important;
+  margin-bottom: 0.7rem;
+  line-height: 1.5;
+}
+</style>
+""", unsafe_allow_html=True)
+
+if "show_inspire" not in st.session_state:
+    st.session_state["show_inspire"] = False
+if inspire_clicked:
+    st.session_state["show_inspire"] = not st.session_state.get("show_inspire", False)
+    st.rerun()
+
+if st.session_state.get("show_inspire"):
     st.markdown("""
-    <div class="search-form">
-      <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
-      color:#fa7c4f;margin-bottom:0.75rem;">✦ Describe your trip in plain English</div>
+    <div class="inspire-panel">
+      <div class="inspire-label">✦ Not sure where to go?</div>
+      <div class="inspire-hint">Describe your ideal trip and Gemini will figure out the destination, dates and budget for you.</div>
     </div>
     """, unsafe_allow_html=True)
-
-    nl_col_in, nl_col_btn = st.columns([4, 1])
-    nl_input = nl_col_in.text_input(
-        "nl_input", label_visibility="collapsed",
-        placeholder='e.g. "Beach trip from Singapore under $600, leaving late April for a week"',
+    _ni_col, _np_col = st.columns([4, 1])
+    nl_input = _ni_col.text_input(
+        "inspire_input", label_visibility="collapsed",
+        placeholder='e.g. "Warm beach escape under $800, two weeks in May, leaving from Singapore"',
         key="nl_text"
     )
-    nl_parse_clicked = nl_col_btn.button("Parse →", type="primary", use_container_width=True, key="nl_parse")
+    nl_parse_clicked = _np_col.button("Plan it →", type="primary", use_container_width=True, key="nl_parse")
 
     if nl_parse_clicked and nl_input.strip():
-        with st.spinner("✦ Understanding your request..."):
+        with st.spinner("✦ Crafting your trip..."):
             _parsed = run_async(parse_nl_search(client, GEMINI_MODEL, nl_input.strip(), str(_today)))
         if _parsed:
             if _parsed.get("origin_city"):
@@ -1879,136 +1886,33 @@ if st.session_state.get("nl_mode"):
                 try:
                     _new_out = date.fromisoformat(_parsed["outbound_date"])
                     if _new_out >= _today:
-                        _default_out = _new_out
                         st.session_state["outbound_date"] = _parsed["outbound_date"]
                 except Exception:
                     pass
             if _parsed.get("return_date"):
                 try:
-                    _default_ret = date.fromisoformat(_parsed["return_date"])
                     st.session_state["return_date"] = _parsed["return_date"]
                 except Exception:
                     pass
             if _parsed.get("max_flight_budget", 0) > 0:
-                st.session_state["_nl_flight_budget"] = _parsed["max_flight_budget"]
+                st.session_state["fp_fbudget"] = _parsed["max_flight_budget"]
             if _parsed.get("max_hotel_budget", 0) > 0:
-                st.session_state["_nl_hotel_budget"] = _parsed["max_hotel_budget"]
-            st.session_state["nl_parsed"] = _parsed
+                st.session_state["fp_hbudget"] = _parsed["max_hotel_budget"]
+            st.session_state["nl_parsed"]     = _parsed
+            st.session_state["show_inspire"]  = False  # collapse after parsing
             st.rerun()
 
-    # Parsed result chips
     _p = st.session_state.get("nl_parsed", {})
     if _p:
         chips = []
-        if _p.get("origin_city"):            chips.append(f'<div class="nl-parse-chip"><span>From</span> {_p["origin_city"]}</div>')
-        if _p.get("destination_city"):       chips.append(f'<div class="nl-parse-chip"><span>To</span> {_p["destination_city"]}</div>')
-        if _p.get("outbound_date"):          chips.append(f'<div class="nl-parse-chip"><span>Out</span> {_p["outbound_date"]}</div>')
-        if _p.get("return_date"):            chips.append(f'<div class="nl-parse-chip"><span>Ret</span> {_p["return_date"]}</div>')
-        if _p.get("trip_style"):             chips.append(f'<div class="nl-parse-chip"><span>Style</span> {_p["trip_style"]}</div>')
-        if _p.get("max_flight_budget", 0) > 0: chips.append(f'<div class="nl-parse-chip"><span>Flight ≤</span> {_p["max_flight_budget"]}</div>')
+        if _p.get("origin_city"):               chips.append(f'<div class="nl-parse-chip"><span>From</span> {_p["origin_city"]}</div>')
+        if _p.get("destination_city"):          chips.append(f'<div class="nl-parse-chip"><span>To</span> {_p["destination_city"]}</div>')
+        if _p.get("outbound_date"):             chips.append(f'<div class="nl-parse-chip"><span>Out</span> {_p["outbound_date"]}</div>')
+        if _p.get("return_date"):               chips.append(f'<div class="nl-parse-chip"><span>Ret</span> {_p["return_date"]}</div>')
+        if _p.get("trip_style"):                chips.append(f'<div class="nl-parse-chip"><span>Style</span> {_p["trip_style"]}</div>')
+        if _p.get("max_flight_budget", 0) > 0:  chips.append(f'<div class="nl-parse-chip"><span>Budget ≤</span> ${_p["max_flight_budget"]}</div>')
         if chips:
-            st.markdown(f'<div class="nl-parse-result" style="margin-top:0.6rem;">{"".join(chips)}</div>', unsafe_allow_html=True)
-        # Hint to search
-        st.markdown('<div style="font-size:0.75rem;color:#a8896e;margin-top:0.6rem;">✓ Fields filled — hit Search or Plan My Entire Trip below</div>', unsafe_allow_html=True)
-
-    # In NL mode, origin/destination/dates come from parsed state or defaults
-    origin      = st.session_state.get("origin_iata",      "SIN")
-    destination = st.session_state.get("destination_iata", "NRT")
-    _out_str    = st.session_state.get("outbound_date", _default_out.strftime("%Y-%m-%d"))
-    _ret_str    = st.session_state.get("return_date",   _default_ret.strftime("%Y-%m-%d"))
-    try:
-        outbound_date_obj = date.fromisoformat(_out_str)
-    except Exception:
-        outbound_date_obj = _default_out
-    try:
-        return_date_obj = date.fromisoformat(_ret_str)
-    except Exception:
-        return_date_obj = _default_ret
-    outbound_date = outbound_date_obj.strftime("%Y-%m-%d")
-    return_date   = return_date_obj.strftime("%Y-%m-%d")
-    location      = st.session_state.get("location", "")
-
-# ══════════════════════════════════════════════════════════════
-# MODE B: Manual Form
-# ══════════════════════════════════════════════════════════════
-else:
-    # ── Form wrapper ──────────────────────────────────────────
-    st.markdown('<div class="search-form">', unsafe_allow_html=True)
-
-    # Row 1: From → To
-    r1c1, r1c2 = st.columns([1, 1])
-
-    _pill_style = ("font-size:0.73rem;padding:0.22rem 0.55rem;"
-                   "background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.25);"
-                   "border-radius:6px;color:#fa7c4f;display:inline-block;margin-top:2px;")
-
-    def _render_airport_input(col, label, state_key, state_iata_key, default_city, default_iata):
-        """
-        Renders a city text input. If the city has multiple airports, shows a
-        compact selectbox to pick one. Returns the final resolved IATA code.
-        """
-        raw = col.text_input(label, value=st.session_state.get(state_key, default_city),
-                             placeholder="City, e.g. Bangkok").strip()
-        st.session_state[state_key] = raw
-
-        options = get_airport_options(raw)
-
-        if options:
-            opt_labels = [lbl for _, lbl in options]
-            opt_iatas  = [iata for iata, _ in options]
-            prev_iata  = st.session_state.get(state_iata_key, opt_iatas[0])
-            prev_idx   = opt_iatas.index(prev_iata) if prev_iata in opt_iatas else 0
-            chosen_label = col.selectbox(
-                f"Airport for {raw}",
-                options=opt_labels,
-                index=prev_idx,
-                key=f"airport_sel_{state_key}",
-                label_visibility="collapsed",
-            )
-            chosen_iata = opt_iatas[opt_labels.index(chosen_label)]
-            st.session_state[state_iata_key] = chosen_iata
-            col.markdown(
-                f'<div style="{_pill_style}">✈ {chosen_iata}  ·  {raw}</div>',
-                unsafe_allow_html=True,
-            )
-            return chosen_iata
-        else:
-            iata = resolve_to_iata(raw) if raw else default_iata
-            st.session_state[state_iata_key] = iata
-            if raw:
-                resolved  = iata != raw.upper()
-                pill_text = f"✈ {iata}  ·  {raw}" if resolved else f"✈ {iata}"
-                col.markdown(
-                    f'<div style="{_pill_style}">{pill_text}</div>',
-                    unsafe_allow_html=True,
-                )
-            return iata
-
-    origin      = _render_airport_input(r1c1, "From", "origin_city",      "origin_iata",      "Singapore", "SIN")
-    destination = _render_airport_input(r1c2, "To",   "destination_city", "destination_iata", "Tokyo",     "NRT")
-
-    # Row 2: dates + hotel location
-    r2c1, r2c2, r2c3 = st.columns([1, 1, 1])
-    outbound_date_obj = r2c1.date_input("Outbound date", value=_default_out, min_value=_today, format="YYYY-MM-DD")
-    return_date_obj   = r2c2.date_input("Return date",   value=_default_ret, min_value=_default_out, format="YYYY-MM-DD")
-    location = r2c3.text_input(
-        "Hotel location",
-        value=st.session_state.get("location", ""),
-        placeholder="Optional — defaults to destination"
-    ).strip()
-
-    outbound_date = outbound_date_obj.strftime("%Y-%m-%d")
-    return_date   = return_date_obj.strftime("%Y-%m-%d")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ── Buttons (shown in both modes) ───────────────────────────
-st.markdown('<div class="search-btn-row">', unsafe_allow_html=True)
-col_s1, col_s2, col_s3 = st.columns([1.1, 1.1, 0.8])
-search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
-plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
-surprise_clicked = col_s3.button("🎲  Surprise Me!", use_container_width=True)
-st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="nl-parse-result">{"".join(chips)}</div>', unsafe_allow_html=True)
 
 # ── Collapsible filter panel ─────────────────────────────────
 st.markdown("""
@@ -2199,8 +2103,9 @@ if not (search_clicked or plan_clicked) and st.session_state.get("flights_raw_ca
     st.session_state["flights"]    = _flights_re
     st.session_state["hotels"]     = _hotels_re
 
-# ── SURPRISE ME ─────────────────────────────────────────────────────────────
-if surprise_clicked:
+# ── INSPIRE ME — surprise destination logic ───────────────────────────────
+if inspire_clicked and not st.session_state.get("show_inspire"):
+    # If they just want a pure random surprise (no NL input), pick one for them
     surprise_prompt = f"""You are a travel inspiration AI.
 The user is departing from {origin or "Singapore (SIN)"} on {outbound_date} returning {return_date}.
 Their trip style is: {style}. Budget level: {'tight' if max_flight_budget and max_flight_budget < 500 else 'moderate' if max_flight_budget and max_flight_budget < 1500 else 'open'}.
