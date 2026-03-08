@@ -997,6 +997,35 @@ div[data-testid="stDateInput"] > div {
   border-radius: var(--radius-sm) !important;
 }
 
+/* Nuke any white backgrounds bleeding into calendar */
+[data-baseweb="calendar"] [role="gridcell"],
+[data-baseweb="calendar"] [role="gridcell"] *,
+[data-baseweb="calendar"] [role="grid"],
+[data-baseweb="calendar"] [role="grid"] *,
+[data-baseweb="datepicker"] *,
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] * {
+  background-color: var(--surface2) !important;
+  color: var(--text) !important;
+}
+/* Re-apply transparent to day buttons so hover works */
+[data-baseweb="calendar"] [role="gridcell"] button {
+  background-color: transparent !important;
+  color: var(--text) !important;
+}
+[data-baseweb="calendar"] [role="gridcell"] button:hover {
+  background-color: rgba(250,124,79,0.2) !important;
+}
+[data-baseweb="calendar"] [aria-selected="true"] button {
+  background-color: var(--accent) !important;
+  color: #1a1008 !important;
+}
+/* Empty trailing cells */
+[data-baseweb="calendar"] [role="gridcell"]:empty,
+[data-baseweb="calendar"] td:empty {
+  background-color: var(--surface2) !important;
+}
+
 /* ---------- calendar popup ---------- */
 /* Outer popover shell */
 [data-baseweb="calendar"],
