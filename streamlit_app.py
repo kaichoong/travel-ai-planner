@@ -114,6 +114,31 @@ async def get_flights(serp_key, origin, destination, out_date, ret_date, currenc
         raise RuntimeError(results["error"])
     return results.get("best_flights", []) or []
 
+async def get_price_for_date(serp_key, origin, destination, out_date, trip_length_days, currency):
+    """Fetch the cheapest flight price for a single outbound date. Returns (date_str, price_float)."""
+    from datetime import date, timedelta
+    try:
+        ret = (date.fromisoformat(out_date) + timedelta(days=trip_length_days)).strftime("%Y-%m-%d")
+        params = {
+            "engine": "google_flights",
+            "api_key": serp_key,
+            "departure_id": origin.upper(),
+            "arrival_id": destination.upper(),
+            "outbound_date": out_date,
+            "return_date": ret,
+            "currency": currency,
+            "hl": "en",
+            "gl": "us",
+        }
+        results = await serpapi_search(params)
+        best = results.get("best_flights", []) or []
+        if not best:
+            return (out_date, None)
+        price = best[0].get("price")
+        return (out_date, float(price) if price else None)
+    except Exception:
+        return (out_date, None)
+
 async def get_hotels(serp_key, location, check_in, check_out, currency, min_rating):
     params = {
         "engine": "google_hotels",
@@ -138,6 +163,76 @@ async def get_hotels(serp_key, location, check_in, check_out, currency, min_rati
 # -------------------------
 # Formatting
 # -------------------------
+async def get_weather(destination_iata: str, start_date: str, end_date: str) -> dict:
+    """
+    Fetch weather forecast via Open-Meteo (free, no key).
+    First geocodes the IATA city name via Open-Meteo geocoding,
+    then fetches daily max temp + precipitation probability.
+    Returns dict with keys: city, daily (list of dicts).
+    """
+    import json
+    # IATA → city name mapping for common hubs; fallback to raw string
+    IATA_CITY = {
+        "NRT":"Tokyo","HND":"Tokyo","KIX":"Osaka","ITM":"Osaka","CTS":"Sapporo",
+        "SIN":"Singapore","KUL":"Kuala Lumpur","BKK":"Bangkok","DMK":"Bangkok",
+        "HKG":"Hong Kong","ICN":"Seoul","GMP":"Seoul","PEK":"Beijing","PVG":"Shanghai",
+        "SYD":"Sydney","MEL":"Melbourne","BNE":"Brisbane","AKL":"Auckland",
+        "LHR":"London","LGW":"London","CDG":"Paris","AMS":"Amsterdam","FRA":"Frankfurt",
+        "DXB":"Dubai","AUH":"Abu Dhabi","DOH":"Doha","BOM":"Mumbai","DEL":"Delhi",
+        "JFK":"New York","LAX":"Los Angeles","SFO":"San Francisco","ORD":"Chicago",
+        "MIA":"Miami","YYZ":"Toronto","YVR":"Vancouver","GRU":"São Paulo",
+        "SCL":"Santiago","EZE":"Buenos Aires","NBO":"Nairobi","CPT":"Cape Town",
+        "MNL":"Manila","CGK":"Jakarta","SGN":"Ho Chi Minh City","HAN":"Hanoi",
+        "RGN":"Yangon","CMB":"Colombo","DAC":"Dhaka","KTM":"Kathmandu",
+    }
+    city = IATA_CITY.get(destination_iata.upper(), destination_iata)
+
+    try:
+        # Step 1: geocode
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={quote_plus(city)}&count=1&language=en&format=json"
+        geo_res = await asyncio.to_thread(lambda: __import__('urllib.request', fromlist=['urlopen']).urlopen(geo_url, timeout=5).read())
+        geo_data = json.loads(geo_res)
+        results_geo = geo_data.get("results", [])
+        if not results_geo:
+            return {}
+        lat = results_geo[0]["latitude"]
+        lon = results_geo[0]["longitude"]
+        city_name = results_geo[0].get("name", city)
+
+        # Step 2: forecast
+        wx_url = (
+            f"https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode"
+            f"&start_date={start_date}&end_date={end_date}"
+            f"&timezone=auto&temperature_unit=celsius"
+        )
+        wx_res = await asyncio.to_thread(lambda: __import__('urllib.request', fromlist=['urlopen']).urlopen(wx_url, timeout=5).read())
+        wx_data = json.loads(wx_res)
+        daily = wx_data.get("daily", {})
+        dates     = daily.get("time", [])
+        tmax      = daily.get("temperature_2m_max", [])
+        tmin      = daily.get("temperature_2m_min", [])
+        precip    = daily.get("precipitation_probability_max", [])
+        wcode     = daily.get("weathercode", [])
+
+        WMO = {0:"☀️",1:"🌤",2:"⛅",3:"☁️",45:"🌫",48:"🌫",51:"🌦",53:"🌦",55:"🌧",
+               61:"🌧",63:"🌧",65:"🌧",71:"🌨",73:"🌨",75:"❄️",80:"🌦",81:"🌧",
+               82:"⛈",85:"🌨",86:"❄️",95:"⛈",96:"⛈",99:"⛈"}
+
+        day_list = []
+        for i, d in enumerate(dates):
+            day_list.append({
+                "date": d,
+                "tmax": tmax[i] if i < len(tmax) else None,
+                "tmin": tmin[i] if i < len(tmin) else None,
+                "precip": precip[i] if i < len(precip) else None,
+                "icon":  WMO.get(wcode[i] if i < len(wcode) else 0, "🌡"),
+            })
+        return {"city": city_name, "daily": day_list}
+    except Exception:
+        return {}
+
 def fmt_flights(best_flights, origin, destination, out_date, ret_date):
     out = []
     fallback_link = google_flights_search_url(origin, destination, out_date, ret_date)
@@ -837,9 +932,10 @@ location = st.text_input(
     placeholder="e.g. Tokyo, Shinjuku"
 ).strip()
 
-col_s1, col_s2 = st.columns([1, 1])
-search_clicked = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
-plan_clicked   = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
+col_s1, col_s2, col_s3 = st.columns([1.1, 1.1, 0.8])
+search_clicked   = col_s1.button("🔍  Search Flights & Hotels", type="primary", use_container_width=True)
+plan_clicked     = col_s2.button("✨  Plan My Entire Trip", type="secondary", use_container_width=True)
+surprise_clicked = col_s3.button("🎲  Surprise Me!", use_container_width=True)
 
 # -------------------------
 # Search
@@ -865,21 +961,84 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
         flights = [f for f in flights if _parse_price(f.get("price")) <= max_flight_budget]
     if max_hotel_budget > 0:
         hotels_fmt = [h for h in hotels_fmt if _parse_price(h.get("price")) <= max_hotel_budget]
+    # expose raw for filter-stability re-sort
+    _do_search.last_raw = (flights_raw, hotels_raw)
 
     st.session_state.update({
         "origin": origin, "destination": destination,
         "outbound_date": out_d, "return_date": ret_d,
         "location": location, "hotel_loc": hotel_loc,
         "flights": flights, "hotels": hotels_fmt,
+        "flights_raw_cache": flights_raw,
+        "hotels_raw_cache":  hotels_raw,
         "max_flight_budget": max_flight_budget,
         "max_hotel_budget":  max_hotel_budget,
         "selected_flights": [], "selected_hotels": [],
         "ai_flights_md": "", "ai_hotels_md": "",
         "itinerary_md": "", "tips_md": "", "insights_md": "",
-        "packing_md": "", "visa_md": "",
+        "packing_md": "", "visa_md": "", "weather": {},
+        "price_calendar": {},
     })
     return flights, hotels_fmt, hotel_loc
 
+
+# ── FILTER STABILITY: re-apply sort/budget to cached raw results ────────────
+# This prevents sidebar changes from wiping results (no new API call needed)
+if not (search_clicked or plan_clicked) and st.session_state.get("flights_raw_cache"):
+    _cached = st.session_state["flights_raw_cache"]
+    _cached_h = st.session_state.get("hotels_raw_cache", [])
+    _co = st.session_state.get("origin", origin)
+    _cd = st.session_state.get("destination", destination)
+    _cod = st.session_state.get("outbound_date", outbound_date)
+    _crd = st.session_state.get("return_date", return_date)
+    _cloc = st.session_state.get("hotel_loc", destination)
+    _flights_re = sort_flights(fmt_flights(_cached, _co, _cd, _cod, _crd), flight_sort)
+    _hotels_re  = sort_hotels(fmt_hotels(_cached_h, _cloc, _cod, _crd), hotel_sort)
+    if max_flight_budget > 0:
+        _flights_re = [f for f in _flights_re if _parse_price(f.get("price")) <= max_flight_budget]
+    if max_hotel_budget > 0:
+        _hotels_re = [h for h in _hotels_re if _parse_price(h.get("price")) <= max_hotel_budget]
+    st.session_state["flights"]    = _flights_re
+    st.session_state["hotels"]     = _hotels_re
+
+# ── SURPRISE ME ─────────────────────────────────────────────────────────────
+if surprise_clicked:
+    surprise_prompt = f"""You are a travel inspiration AI.
+The user is departing from {origin or "Singapore (SIN)"} on {outbound_date} returning {return_date}.
+Their trip style is: {style}. Budget level: {'tight' if max_flight_budget and max_flight_budget < 500 else 'moderate' if max_flight_budget and max_flight_budget < 1500 else 'open'}.
+
+Pick ONE surprising, specific destination that perfectly fits this traveller.
+Respond ONLY in this exact JSON format (no markdown, no explanation outside the JSON):
+{{"iata": "NRT", "city": "Tokyo", "country": "Japan", "tagline": "one evocative sentence about why this destination is perfect for them", "highlights": ["thing1", "thing2", "thing3"]}}"""
+
+    with st.spinner("🎲 Finding your perfect surprise destination..."):
+        raw_surprise = run_async(gemini_call(client, GEMINI_MODEL, surprise_prompt))
+
+    import json as _json
+    try:
+        # strip any accidental markdown fences
+        _clean = raw_surprise.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        _s = _json.loads(_clean)
+        st.session_state["surprise"] = _s
+    except Exception:
+        st.session_state["surprise"] = None
+        st.warning("Couldn't parse surprise destination. Try again!")
+
+if st.session_state.get("surprise") and not (search_clicked or plan_clicked):
+    _s = st.session_state["surprise"]
+    st.markdown(f"""
+    <div style="background:rgba(250,124,79,0.10);border:1px solid rgba(250,124,79,0.30);
+    border-radius:14px;padding:1rem 1.3rem;margin-bottom:1rem;">
+      <div style="font-size:1.1rem;font-weight:700;color:#fa7c4f !important;margin-bottom:0.3rem;">
+        🎲 Your surprise destination: {_s.get('city','?')}, {_s.get('country','?')} ({_s.get('iata','?')})
+      </div>
+      <div style="font-size:0.9rem;color:#fdf4ec !important;margin-bottom:0.5rem;">{_s.get('tagline','')}</div>
+      <div style="font-size:0.82rem;color:#a8896e !important;">✨ {"&nbsp;&nbsp;·&nbsp;&nbsp;".join(_s.get("highlights",[]))}</div>
+      <div style="font-size:0.78rem;color:#a8896e !important;margin-top:0.4rem;">
+        👆 Update Destination to <strong>{_s.get('iata','?')}</strong> then hit Search or Plan My Entire Trip
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 if search_clicked or plan_clicked:
     try:
@@ -980,14 +1139,64 @@ Keep it factual. Note that requirements vary by nationality and travellers shoul
                 )
                 return results
 
-            with st.spinner("✨ Gemini is planning your entire trip — hang tight..."):
-                f_md, h_md, i_md, t_md, ins_md, pack_md, visa_md = run_async(run_plan_all())
+            _progress_bar  = st.progress(0, text="✨ Starting your trip plan...")
+            _status        = st.empty()
+
+            _status.markdown("⏳ **Step 1/4** — Analysing flights & hotels...")
+            _progress_bar.progress(10, text="Analysing options...")
+
+            async def run_plan_all_phased():
+                # Phase 1: flight + hotel picks (fast, small prompts)
+                f_md, h_md = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, fp),
+                    gemini_call(client, GEMINI_MODEL, hp),
+                )
+                return f_md, h_md
+
+            f_md, h_md = run_async(run_plan_all_phased())
+            _progress_bar.progress(35, text="Building itinerary...")
+            _status.markdown("⏳ **Step 2/4** — Crafting your day-by-day itinerary...")
+
+            async def run_plan_phase2():
+                i_md, t_md = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, ip),
+                    gemini_call(client, GEMINI_MODEL, tp),
+                )
+                return i_md, t_md
+
+            i_md, t_md = run_async(run_plan_phase2())
+            _progress_bar.progress(65, text="Researching destination...")
+            _status.markdown("⏳ **Step 3/4** — Researching destination insights...")
+
+            async def run_plan_phase3():
+                ins_md, wx_data = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, ins_p),
+                    get_weather(destination, out_d, ret_d),
+                )
+                return ins_md, wx_data
+
+            ins_md, wx_data = run_async(run_plan_phase3())
+            _progress_bar.progress(85, text="Generating essentials...")
+            _status.markdown("⏳ **Step 4/4** — Packing list & visa info...")
+
+            async def run_plan_phase4():
+                p_md, v_md = await asyncio.gather(
+                    gemini_call(client, GEMINI_MODEL, pack_p),
+                    gemini_call(client, GEMINI_MODEL, visa_p),
+                )
+                return p_md, v_md
+
+            pack_md, visa_md = run_async(run_plan_phase4())
+            _progress_bar.progress(100, text="Done!")
+            _status.empty()
+            _progress_bar.empty()
 
             st.session_state.update({
                 "ai_flights_md": f_md, "ai_hotels_md": h_md,
                 "itinerary_md": i_md,  "tips_md": t_md,
                 "insights_md": ins_md,
                 "packing_md": pack_md, "visa_md": visa_md,
+                "weather": wx_data,
             })
             st.success("✅ Your full trip plan is ready! Browse the tabs below.")
 
@@ -1050,6 +1259,69 @@ if flights or hotels_fmt:
               <div class="empty-sub">Try different dates, route, or check the IATA codes.</div>
             </div>""", unsafe_allow_html=True)
         else:
+            # ── PRICE CALENDAR ───────────────────────────────────
+            with st.expander("📅 Price Calendar — cheapest days to fly this month", expanded=False):
+                _pc_origin = st.session_state.get("origin", origin)
+                _pc_dest   = st.session_state.get("destination", destination)
+                _pc_out    = st.session_state.get("outbound_date", outbound_date)
+                _pc_curr   = currency
+                try:
+                    _trip_len = (date.fromisoformat(st.session_state.get("return_date", return_date)) -
+                                 date.fromisoformat(_pc_out)).days
+                except Exception:
+                    _trip_len = 7
+
+                if st.button("Load Price Calendar", key="btn_price_cal"):
+                    # Sample 14 dates: selected date ± 7 days
+                    from datetime import date as _date, timedelta as _td
+                    _base = _date.fromisoformat(_pc_out)
+                    _sample_dates = [
+                        (_base + _td(days=i)).strftime("%Y-%m-%d")
+                        for i in range(-6, 8)
+                        if (_base + _td(days=i)) >= _date.today()
+                    ]
+
+                    async def fetch_calendar():
+                        tasks = [
+                            get_price_for_date(SERPAPI_API_KEY, _pc_origin, _pc_dest, d, _trip_len, _pc_curr)
+                            for d in _sample_dates
+                        ]
+                        return await asyncio.gather(*tasks)
+
+                    with st.spinner(f"Checking prices for {len(_sample_dates)} dates..."):
+                        _cal_results = run_async(fetch_calendar())
+
+                    _cal_dict = {d: p for d, p in _cal_results if p is not None}
+                    st.session_state["price_calendar"] = _cal_dict
+
+                _cal = st.session_state.get("price_calendar", {})
+                if _cal:
+                    _prices = [v for v in _cal.values() if v]
+                    _min_p  = min(_prices) if _prices else 0
+                    _max_p  = max(_prices) if _prices else 1
+                    _range  = max(_max_p - _min_p, 1)
+
+                    _cal_cols = st.columns(min(len(_cal), 7))
+                    for _ci, (_dt, _pr) in enumerate(sorted(_cal.items())):
+                        _col_i = _ci % 7
+                        with _cal_cols[_col_i]:
+                            _ratio = (_pr - _min_p) / _range
+                            # green = cheap, red = expensive
+                            _r = int(80  + _ratio * 175)
+                            _g = int(200 - _ratio * 130)
+                            _b = 80
+                            _is_selected = _dt == _pc_out
+                            _border = "2px solid #fa7c4f" if _is_selected else "1px solid rgba(255,200,150,0.15)"
+                            st.markdown(f"""
+                            <div style="text-align:center;background:rgba({_r},{_g},{_b},0.18);
+                            border:{_border};border-radius:10px;padding:0.4rem 0.1rem;margin-bottom:0.3rem;">
+                              <div style="font-size:0.65rem;color:#a8896e !important;">{_dt[5:]}</div>
+                              <div style="font-size:0.82rem;font-weight:600;color:#fdf4ec !important;">{_pc_curr} {_pr:,.0f}</div>
+                              {'<div style="font-size:0.6rem;color:#38d96a !important;">★ cheapest</div>' if _pr == _min_p else ''}
+                            </div>""", unsafe_allow_html=True)
+                elif not st.session_state.get("price_calendar") is None:
+                    st.caption("Click 'Load Price Calendar' to see prices across nearby dates.")
+
             labels = [f"{i+1}. {f['airline']}  ·  {f['price']}  ·  {f['stops']}  ·  {f['depart_code']} {f['depart_time']} → {f['arrive_code']} {f['arrive_time']}" for i, f in enumerate(flights)]
             selected = st.multiselect("Select up to 3 flights to personalise AI picks", options=labels, default=st.session_state.get("selected_flights", []))
             selected, clipped = clamp_multiselect(selected, 3)
@@ -1280,6 +1552,37 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
         dest2  = st.session_state.get("destination", destination)
         out_d2 = st.session_state.get("outbound_date", outbound_date)
         ret_d2 = st.session_state.get("return_date", return_date)
+
+        # ── WEATHER WIDGET ────────────────────────────────────────
+        wx = st.session_state.get("weather", {})
+        if not wx:
+            with st.spinner("Fetching weather forecast..."):
+                wx = run_async(get_weather(dest2, out_d2, ret_d2))
+                st.session_state["weather"] = wx
+
+        if wx and wx.get("daily"):
+            st.markdown(f"#### 🌤 Weather in {wx.get('city', dest2)} during your trip")
+            wx_cols = st.columns(min(len(wx["daily"]), 7))
+            for ci, day in enumerate(wx["daily"][:7]):
+                with wx_cols[ci]:
+                    d_label = day["date"][5:]  # MM-DD
+                    icon    = day.get("icon", "🌡")
+                    tmax    = day.get("tmax")
+                    tmin    = day.get("tmin")
+                    precip  = day.get("precip")
+                    temp_str  = f"{tmax:.0f}°" if tmax is not None else "—"
+                    tmin_str  = f"{tmin:.0f}°" if tmin is not None else ""
+                    precip_str = f"💧{precip}%" if precip is not None else ""
+                    st.markdown(f"""
+                    <div style="text-align:center;background:rgba(255,255,255,0.04);
+                    border:1px solid rgba(255,200,150,0.12);border-radius:10px;padding:0.5rem 0.2rem;">
+                      <div style="font-size:0.7rem;color:#a8896e !important;">{d_label}</div>
+                      <div style="font-size:1.4rem;">{icon}</div>
+                      <div style="font-size:0.9rem;font-weight:600;">{temp_str}</div>
+                      <div style="font-size:0.7rem;color:#a8896e !important;">{tmin_str}</div>
+                      <div style="font-size:0.68rem;color:#a8896e !important;">{precip_str}</div>
+                    </div>""", unsafe_allow_html=True)
+            st.markdown("")
 
         has_itinerary = st.session_state.get("itinerary_md") or st.session_state.get("tips_md")
 
