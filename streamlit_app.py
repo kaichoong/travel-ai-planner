@@ -694,6 +694,63 @@ Keep reasons under 8 words. Be honest and specific."""
         return {"flights": [], "hotels": []}
 
 
+async def get_alt_suggestions(client, model, origin, destination, out_d, ret_d,
+                               currency, style, max_flight_budget, max_hotel_budget):
+    """
+    Returns 2 alternative destination suggestions as a list of dicts:
+    [{city, country, iata, emoji, tagline, why, est_flight_price, best_for}, ...]
+    """
+    budget_hint = ""
+    if max_flight_budget > 0:
+        budget_hint = f"Flight budget: ≤ {currency} {max_flight_budget}. "
+    if max_hotel_budget > 0:
+        budget_hint += f"Hotel budget: ≤ {currency} {max_hotel_budget}/night."
+
+    prompt = f"""You are a creative travel advisor. A traveller is planning:
+- Route: {origin} → {destination}
+- Dates: {out_d} to {ret_d}
+- Trip style: {style}
+- {budget_hint}
+
+Suggest exactly 2 ALTERNATIVE destinations they might not have considered — different from {destination} but similar in appeal or reachable from {origin} in the same season. Make them genuinely compelling and specific.
+
+Return ONLY valid JSON, no markdown, no explanation:
+[
+  {{
+    "city": "Kyoto",
+    "country": "Japan",
+    "iata": "ITM",
+    "emoji": "⛩️",
+    "tagline": "Ancient temples, zero crowds vs Tokyo",
+    "why": "Same flight distance, but quieter, cheaper hotels and peak cherry blossom season",
+    "est_flight_price": "~SGD 420",
+    "best_for": "Culture & history lovers"
+  }},
+  {{...}}
+]
+
+Rules:
+- emoji must be a single relevant emoji for the destination
+- tagline max 7 words
+- why max 12 words, specific and punchy
+- est_flight_price: rough estimate from {origin}, prefix with ~
+- best_for: 3-4 words describing who it suits
+- Pick destinations genuinely reachable from {origin} in a similar flight time to {destination}"""
+
+    try:
+        raw = await gemini_call(client, model, prompt)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        import json
+        result = json.loads(raw.strip())
+        return result[:2] if isinstance(result, list) else []
+    except Exception:
+        return []
+
+
 st.set_page_config(page_title="AI Travel Planner", page_icon="✈️", layout="wide")
 
 # -------------------------
@@ -1070,6 +1127,86 @@ div[data-testid="stSlider"] [data-testid="stSliderTrack"] > div:nth-child(2) {
 .stDownloadButton > button:hover {
   background: rgba(250,124,79,0.12) !important;
 }
+
+/* ── alt destination suggestions ── */
+.alt-suggestions-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+.alt-card {
+  background: linear-gradient(135deg, rgba(44,28,14,0.9) 0%, rgba(35,21,8,0.95) 100%);
+  border: 1px solid rgba(255,200,150,0.10);
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.alt-card:hover {
+  border-color: rgba(255,179,71,0.30);
+  transform: translateY(-2px);
+}
+.alt-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,179,71,0.4), transparent);
+}
+.alt-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.alt-card-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffb347 !important;
+  background: rgba(255,179,71,0.10);
+  border: 1px solid rgba(255,179,71,0.22);
+  border-radius: 99px;
+  padding: 0.15rem 0.55rem;
+}
+.alt-card-emoji { font-size: 1.6rem; line-height: 1; }
+.alt-city {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text) !important;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.1rem;
+}
+.alt-country { font-size: 0.75rem; color: var(--muted) !important; }
+.alt-tagline {
+  font-size: 0.8rem;
+  color: var(--text) !important;
+  font-weight: 500;
+  margin: 0.35rem 0 0.25rem;
+  font-style: italic;
+}
+.alt-why {
+  font-size: 0.74rem;
+  color: var(--muted) !important;
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+}
+.alt-meta {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.alt-meta-chip {
+  font-size: 0.68rem;
+  color: var(--muted) !important;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.alt-meta-chip strong { color: var(--accent2) !important; font-weight: 600; }
 
 /* ---------- tabs ---------- */
 [data-testid="stTabs"] [role="tablist"] {
@@ -1638,7 +1775,7 @@ def _do_search(origin, destination, out_d, ret_d, location, currency,
         "ai_flights_md": "", "ai_hotels_md": "",
         "itinerary_md": "", "tips_md": "", "insights_md": "",
         "packing_md": "", "visa_md": "", "weather": {},
-        "price_calendar": {}, "deal_scores": {},
+        "price_calendar": {}, "deal_scores": {}, "alt_suggestions": [],
     })
     return flights, hotels_fmt, hotel_loc
 
@@ -1723,12 +1860,16 @@ if search_clicked or plan_clicked:
 
         # ── AI deal scoring (runs after search, single Gemini call) ──
         if flights or hotels_fmt:
-            with st.spinner("✦ Scoring deals with AI..."):
-                _scores = run_async(get_deal_scores(
-                    client, GEMINI_MODEL, flights, hotels_fmt,
-                    origin, destination, out_d, ret_d, currency, style
+            with st.spinner("✦ Analysing deals & finding alternatives..."):
+                _scores, _alts = run_async(asyncio.gather(
+                    get_deal_scores(client, GEMINI_MODEL, flights, hotels_fmt,
+                                    origin, destination, out_d, ret_d, currency, style),
+                    get_alt_suggestions(client, GEMINI_MODEL, origin, destination,
+                                        out_d, ret_d, currency, style,
+                                        max_flight_budget, max_hotel_budget)
                 ))
-                st.session_state["deal_scores"] = _scores
+                st.session_state["deal_scores"]    = _scores
+                st.session_state["alt_suggestions"] = _alts
 
         if plan_clicked and (flights or hotels_fmt):
             # ── ONE-CLICK: run all AI in parallel ──────────────────
@@ -1915,6 +2056,42 @@ if flights or hotels_fmt:
       {'<span style="color:#a8896e !important;font-size:0.85rem;">💰 Budget filtered</span>' if (st.session_state.get("max_flight_budget",0) or st.session_state.get("max_hotel_budget",0)) else ''}
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Alt destination suggestions ──────────────────────────
+    _alts = st.session_state.get("alt_suggestions", [])
+    if _alts:
+        _dest_city = st.session_state.get("destination_city", st.session_state.get("destination", ""))
+        alt_cards_html = ""
+        for alt in _alts[:2]:
+            alt_cards_html += f"""
+            <div class="alt-card">
+              <div class="alt-card-top">
+                <div>
+                  <div class="alt-city">{alt.get('emoji','')} {alt.get('city','')}</div>
+                  <div class="alt-country">{alt.get('country','')}</div>
+                </div>
+                <div class="alt-card-badge">✦ Alt idea</div>
+              </div>
+              <div class="alt-tagline">"{alt.get('tagline','')}"</div>
+              <div class="alt-why">{alt.get('why','')}</div>
+              <div class="alt-meta">
+                <div class="alt-meta-chip">✈ <strong>{alt.get('est_flight_price','')}</strong></div>
+                <div class="alt-meta-chip">👤 <strong>{alt.get('best_for','')}</strong></div>
+                <div class="alt-meta-chip">🏷 <strong>{alt.get('iata','')}</strong></div>
+              </div>
+            </div>"""
+
+        st.markdown(f"""
+        <div style="margin-bottom:0.4rem;">
+          <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a8896e;">
+            ✦ Gemini also suggests
+          </span>
+          <span style="font-size:0.68rem;color:#a8896e;margin-left:0.4rem;">
+            — alternatives to {_dest_city} worth considering
+          </span>
+        </div>
+        <div class="alt-suggestions-row">{alt_cards_html}</div>
+        """, unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "✈  Flights", "🏨  Hotels", "✦  AI Picks",
@@ -2280,26 +2457,108 @@ Task: Recommend the best 2-3 hotels. For each pick explain WHY in 2-3 bullet poi
 
         if not has_itinerary:
             st.markdown("""
-            <div class="empty-state">
+            <div class="empty-state" style="padding:1.5rem 0 0.5rem;">
               <div class="empty-icon">🗺</div>
-              <div class="empty-title">No itinerary yet</div>
-              <div class="empty-sub">Generate your AI picks first, then create the full itinerary here.</div>
+              <div class="empty-title">Personalise your itinerary</div>
+              <div class="empty-sub">Answer 3 quick questions so Gemini can tailor your day-by-day plan.</div>
             </div>""", unsafe_allow_html=True)
 
-        if st.button("Generate Itinerary & Tips", type="primary"):
+        # ── Personalisation questions ─────────────────────────
+        st.markdown("""
+        <style>
+        .pq-card {
+          background: rgba(35,21,8,0.7);
+          border: 1px solid rgba(255,200,150,0.10);
+          border-radius: 14px;
+          padding: 1.1rem 1.3rem 0.9rem;
+          margin-bottom: 0.75rem;
+        }
+        .pq-label {
+          font-size: 0.7rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--muted) !important;
+          margin-bottom: 0.5rem;
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+        }
+        .pq-num {
+          width: 18px; height: 18px;
+          border-radius: 50%;
+          background: rgba(250,124,79,0.15);
+          border: 1px solid rgba(250,124,79,0.3);
+          font-size: 0.62rem;
+          font-weight: 700;
+          color: var(--accent) !important;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        pq1, pq2, pq3 = st.columns(3)
+
+        with pq1:
+            st.markdown('<div class="pq-card"><div class="pq-label"><div class="pq-num">1</div>Trip pace</div>', unsafe_allow_html=True)
+            pace = st.select_slider(
+                "pace", label_visibility="collapsed",
+                options=["Very relaxed", "Relaxed", "Balanced", "Active", "Packed"],
+                value=st.session_state.get("pref_pace", "Balanced"),
+                key="pref_pace"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with pq2:
+            st.markdown('<div class="pq-card"><div class="pq-label"><div class="pq-num">2</div>Food preferences</div>', unsafe_allow_html=True)
+            food = st.multiselect(
+                "food", label_visibility="collapsed",
+                options=["Local street food", "Fine dining", "Vegetarian/Vegan", "Halal", "Seafood", "Night markets", "Cafés & brunch"],
+                default=st.session_state.get("pref_food", ["Local street food"]),
+                key="pref_food"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with pq3:
+            st.markdown('<div class="pq-card"><div class="pq-label"><div class="pq-num">3</div>Mobility & interests</div>', unsafe_allow_html=True)
+            mobility = st.multiselect(
+                "mobility", label_visibility="collapsed",
+                options=["Lots of walking OK", "Prefer transport", "Wheelchair accessible", "Kid-friendly", "Hidden gems", "Instagram spots", "History & museums", "Nightlife"],
+                default=st.session_state.get("pref_mobility", ["Lots of walking OK"]),
+                key="pref_mobility"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.button("✦  Generate My Itinerary", type="primary", key="btn_itinerary"):
+            food_str     = ", ".join(food)     if food     else "no preference"
+            mobility_str = ", ".join(mobility) if mobility else "no preference"
+
             itinerary_prompt = f"""Create a practical day-by-day itinerary in Markdown for {dest2}
 from {out_d2} to {ret_d2}.
 
-Trip style: {style}
+TRAVELLER PREFERENCES (tailor the plan to these exactly):
+- Trip style: {style}
+- Pace: {pace} — {"include rest time and slower mornings" if pace in ["Very relaxed","Relaxed"] else "keep days well-filled but not overwhelming" if pace == "Balanced" else "pack in lots of activities, early starts OK"}
+- Food preferences: {food_str}
+- Mobility & interests: {mobility_str}
 
-For each day: Morning / Afternoon / Evening.
-Include 2-3 food ideas per day.
-Keep it realistic and not overly packed.""".strip()
+FORMAT: For each day use Morning / Afternoon / Evening sections.
+- Include 2-3 food recommendations per day that match their food preferences
+- Suggest transport between locations
+- Flag any spots relevant to their mobility/interests preferences
+- Keep it realistic for a {pace.lower()} pace — {"max 2-3 activities per half-day" if pace in ["Very relaxed","Relaxed"] else "3-4 activities per half-day" if pace == "Packed" else "2-3 activities per half-day"}
+""".strip()
 
-            tips_prompt = f"""Give concise travel tips in Markdown for {dest2}:
-- Best areas to stay (2-4 options)
-- Getting around (local transit + passes)
-- Budget tips (specific)
+            tips_prompt = f"""Give concise travel tips in Markdown for {dest2} tailored to someone who:
+- Travels at a {pace.lower()} pace
+- Enjoys: {food_str}
+- Preferences: {mobility_str}
+
+Cover:
+- Best areas to stay (2-4 options, matched to their style)
+- Getting around (local transit, passes, apps)
+- Budget tips specific to their food & activity preferences
 - 5 tourist mistakes to avoid
 - 5 local etiquette tips""".strip()
 
@@ -2310,17 +2569,31 @@ Keep it realistic and not overly packed.""".strip()
                 )
                 return i_md, t_md
 
-            with st.spinner("Generating itinerary & tips..."):
+            with st.spinner("✦ Crafting your personalised itinerary..."):
                 i_md, t_md = run_async(run_itinerary())
                 st.session_state["itinerary_md"] = i_md
                 st.session_state["tips_md"]       = t_md
+                st.session_state["itin_pace"]     = pace
+                st.session_state["itin_food"]     = food_str
+                st.session_state["itin_mobility"] = mobility_str
 
         if st.session_state.get("itinerary_md"):
-            st.markdown('''
+            _pace_tag     = st.session_state.get("itin_pace", "")
+            _food_tag     = st.session_state.get("itin_food", "")
+            _mob_tag      = st.session_state.get("itin_mobility", "")
+            _pref_pills   = "".join([
+                f'<span class="pill pill-blue" style="margin-right:4px;">{t}</span>'
+                for t in [_pace_tag] + (_food_tag.split(", ") if _food_tag else []) + (_mob_tag.split(", ") if _mob_tag else [])
+                if t
+            ])
+            st.markdown(f'''
             <div class="ai-result-header">
               <div class="ai-result-icon map">🗓</div>
-              <div><div class="ai-result-title">Day-by-Day Itinerary</div>
-              <div class="ai-result-sub">Your personalised travel plan</div></div>
+              <div>
+                <div class="ai-result-title">Day-by-Day Itinerary</div>
+                <div class="ai-result-sub" style="margin-bottom:0.4rem;">Your personalised travel plan</div>
+                <div>{_pref_pills}</div>
+              </div>
             </div>''', unsafe_allow_html=True)
             st.markdown(st.session_state["itinerary_md"])
 
