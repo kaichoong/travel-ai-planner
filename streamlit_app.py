@@ -1838,6 +1838,7 @@ div.mode-card-row button:hover {
   box-shadow: 0 4px 20px rgba(250,124,79,0.08) !important;
 }
 div.mode-card-row button p { display: none !important; }
+div.mode-card-row button { color: transparent !important; font-size: 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1875,7 +1876,7 @@ with _mc1:
       </div>
     </div>
     """, unsafe_allow_html=True)
-    if _mc1.button("manual_btn", key="sw_manual", use_container_width=True, label_visibility="hidden"):
+    if _mc1.button("⊞ Manual Form", key="sw_manual", use_container_width=True):
         if _is_nl:
             st.session_state["nl_mode"]   = False
             st.session_state["nl_parsed"] = {}
@@ -1897,7 +1898,7 @@ with _mc2:
       </div>
     </div>
     """, unsafe_allow_html=True)
-    if _mc2.button("ai_btn", key="sw_ai", use_container_width=True, label_visibility="hidden"):
+    if _mc2.button("✦ AI Search", key="sw_ai", use_container_width=True):
         if not _is_nl:
             st.session_state["nl_mode"]   = True
             st.session_state["nl_parsed"] = {}
